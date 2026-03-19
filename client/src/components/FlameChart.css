@@ -1,0 +1,168 @@
+/**
+ * FlameChart.css
+ * Purpose: Geek/terminal flame chart styles
+ * Author: TraceLens
+ */
+
+.flame-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flame-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.flame-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: opacity 0.15s;
+}
+
+.flame-legend-item.clickable {
+  cursor: pointer;
+  padding: 2px 5px;
+}
+
+.flame-legend-item.clickable:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.flame-legend-item.inactive {
+  opacity: 0.25;
+}
+
+.flame-legend-item.inactive span {
+  text-decoration: line-through;
+}
+
+.flame-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  transition: opacity 0.15s;
+}
+
+.filter-reset-btn {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-left: 6px;
+}
+
+.filter-reset-btn:hover {
+  background: rgba(0, 255, 242, 0.06);
+  box-shadow: var(--glow-cyan);
+}
+
+.flame-hint {
+  font-size: 9px;
+  color: var(--text-muted);
+  padding: 0 12px;
+  margin-top: -4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.flame-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.flame-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.flame-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  min-height: 26px;
+}
+
+.flame-expand-btn {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 7px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.flame-expand-btn:hover {
+  color: var(--accent-cyan);
+}
+
+.flame-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 0;
+  cursor: default;
+  transition: opacity 0.15s;
+  min-width: 40px;
+  overflow: hidden;
+}
+
+.flame-bar-label {
+  font-size: 10px;
+  color: #000;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flame-bar-duration {
+  font-size: 9px;
+  color: rgba(0, 0, 0, 0.7);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.flame-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 40px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-cyan);
+  padding: 6px 10px;
+  font-size: 10px;
+  z-index: 50;
+  white-space: nowrap;
+  box-shadow: var(--glow-cyan);
+  pointer-events: none;
+}
+
+.flame-tooltip div {
+  padding: 1px 0;
+  color: var(--text-secondary);
+}
+
+.flame-tooltip strong {
+  color: var(--accent-cyan);
+}

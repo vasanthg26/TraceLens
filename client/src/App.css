@@ -1,0 +1,193 @@
+/**
+ * App.css
+ * Purpose: Geek/terminal theme layout
+ * Author: TraceLens
+ */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Navbar: terminal header ── */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 40px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--accent-green);
+  box-shadow: 0 1px 12px rgba(0, 255, 136, 0.06);
+  flex-shrink: 0;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-green);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.navbar-brand svg {
+  stroke: var(--accent-green);
+  filter: drop-shadow(0 0 4px rgba(0, 255, 136, 0.4));
+}
+
+.navbar-brand span {
+  color: var(--accent-green);
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ── Connection: blinking dot ── */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: var(--glow-green);
+  animation: pulse-glow 2s infinite;
+}
+
+.connection-dot.disconnected {
+  background: var(--accent-red);
+  box-shadow: var(--glow-red);
+}
+
+/* ── Main content ── */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* ── Health badges: terminal style ── */
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-family: var(--font-mono);
+  border: 1px solid;
+}
+
+.health-badge.critical {
+  background: rgba(255, 59, 78, 0.1);
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+  box-shadow: var(--glow-red);
+}
+
+.health-badge.poor {
+  background: rgba(255, 159, 28, 0.1);
+  color: var(--accent-orange);
+  border-color: var(--accent-orange);
+}
+
+.health-badge.fair {
+  background: rgba(255, 217, 61, 0.1);
+  color: var(--accent-yellow);
+  border-color: var(--accent-yellow);
+}
+
+.health-badge.good {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+  box-shadow: var(--glow-green);
+}
+
+/* ── Badges: sharp corners ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 0;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+}
+
+.badge.red {
+  background: rgba(255, 59, 78, 0.1);
+  color: var(--accent-red);
+  border-color: rgba(255, 59, 78, 0.3);
+}
+
+.badge.blue {
+  background: rgba(77, 166, 255, 0.1);
+  color: var(--accent-blue);
+  border-color: rgba(77, 166, 255, 0.3);
+}
+
+.badge.orange {
+  background: rgba(255, 159, 28, 0.1);
+  color: var(--accent-orange);
+  border-color: rgba(255, 159, 28, 0.3);
+}
+
+.badge.green {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--accent-green);
+  border-color: rgba(0, 255, 136, 0.3);
+}
+
+.badge.purple {
+  background: rgba(198, 120, 255, 0.1);
+  color: var(--accent-purple);
+  border-color: rgba(198, 120, 255, 0.3);
+}
+
+/* ── Error banner ── */
+.error-banner {
+  padding: 8px 16px;
+  background: rgba(255, 59, 78, 0.08);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  font-size: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.error-banner button {
+  background: transparent;
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+  padding: 2px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+}

@@ -1,0 +1,138 @@
+/**
+ * FixPreview.css
+ * Purpose: Geek/terminal fix preview styles
+ * Author: TraceLens
+ */
+
+.fix-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fix-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.fix-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.fix-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fix-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.impact-badge {
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1px solid;
+}
+
+.impact-badge.high {
+  border-color: rgba(255, 59, 78, 0.4);
+  color: var(--accent-red);
+}
+
+.impact-badge.medium {
+  border-color: rgba(255, 159, 28, 0.4);
+  color: var(--accent-orange);
+}
+
+.impact-badge.low {
+  border-color: rgba(77, 166, 255, 0.4);
+  color: var(--accent-blue);
+}
+
+.fix-saving {
+  font-size: 10px;
+  color: var(--accent-green);
+}
+
+.fix-code-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.fix-code-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.fix-code-block.before {
+  border-right: 1px solid var(--border-color);
+}
+
+.fix-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.fix-code-block.before .fix-code-header {
+  background: rgba(255, 59, 78, 0.04);
+  color: var(--accent-red);
+  border-bottom: 1px solid rgba(255, 59, 78, 0.15);
+}
+
+.fix-code-block.after .fix-code-header {
+  background: rgba(0, 255, 136, 0.03);
+  color: var(--accent-green);
+  border-bottom: 1px solid rgba(0, 255, 136, 0.15);
+}
+
+.copy-btn {
+  padding: 1px 6px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.copy-btn:hover {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.fix-code-block pre {
+  margin: 0;
+  padding: 10px;
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fix-code-block.before pre {
+  background: rgba(255, 59, 78, 0.02);
+  color: var(--text-primary);
+}
+
+.fix-code-block.after pre {
+  background: rgba(0, 255, 136, 0.02);
+  color: var(--text-primary);
+}

@@ -1,0 +1,100 @@
+/**
+ * LLMStatus.css
+ * Purpose: Geek/terminal LLM status indicator
+ * Author: TraceLens
+ */
+
+.llm-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  cursor: default;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.llm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.llm-dot.online {
+  background: var(--accent-green);
+  box-shadow: var(--glow-green);
+  animation: pulse-glow 2s infinite;
+}
+
+.llm-dot.offline {
+  background: var(--accent-red);
+  box-shadow: var(--glow-red);
+}
+
+.llm-dot.checking {
+  background: var(--text-muted);
+  animation: blink 1s infinite;
+}
+
+.llm-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.llm-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-cyan);
+  padding: 10px;
+  min-width: 200px;
+  box-shadow: var(--glow-cyan);
+  z-index: 100;
+}
+
+.llm-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 3px 0;
+  font-size: 10px;
+}
+
+.llm-tooltip-row span:first-child {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.llm-tooltip-row span:last-child {
+  color: var(--text-primary);
+  font-size: 10px;
+  text-align: right;
+  word-break: break-all;
+}
+
+.status-text.online {
+  color: var(--accent-green);
+}
+
+.status-text.offline {
+  color: var(--accent-red);
+}
+
+.status-text.checking {
+  color: var(--text-muted);
+}
+
+.llm-tooltip-error {
+  margin-top: 6px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 59, 78, 0.3);
+  font-size: 9px;
+  color: var(--accent-red);
+  word-break: break-all;
+}

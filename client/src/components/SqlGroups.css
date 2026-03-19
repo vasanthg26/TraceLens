@@ -1,0 +1,170 @@
+/**
+ * SqlGroups.css
+ * Purpose: Geek/terminal SQL groups table
+ * Author: TraceLens
+ */
+
+.sql-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sql-summary-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sql-table-wrapper {
+  overflow-x: auto;
+}
+
+.sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.sql-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.sql-table th {
+  text-align: left;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border-bottom: 1px solid var(--accent-green);
+  white-space: nowrap;
+}
+
+.sql-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sql-table th.sortable:hover {
+  color: var(--accent-cyan);
+}
+
+.sql-table th.num,
+.sql-table td.num {
+  text-align: right;
+}
+
+.sql-row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.sql-row:hover {
+  background: var(--bg-hover);
+}
+
+.sql-row.expanded {
+  background: var(--bg-tertiary);
+}
+
+.sql-row.slow {
+  border-left: 2px solid var(--accent-orange);
+}
+
+.sql-row td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.sql-preview-cell code {
+  font-size: 10px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.status-cell {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* ── Detail Row ── */
+.sql-detail-row td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sql-detail {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-left: 2px solid var(--accent-orange);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sql-detail-section h4 {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+
+.sql-detail-section pre {
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-left: 2px solid var(--accent-orange);
+  font-size: 10px;
+  color: var(--accent-orange);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sql-detail-section ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sql-detail-section li {
+  padding: 2px 0;
+  font-size: 10px;
+}
+
+.sql-detail-section li code {
+  color: var(--text-secondary);
+}
+
+.sql-detail-stats {
+  display: flex;
+  gap: 20px;
+  font-size: 11px;
+}
+
+.sql-detail-stats span {
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.sql-slow-warning {
+  padding: 6px 10px;
+  background: rgba(255, 159, 28, 0.05);
+  border-left: 2px solid var(--accent-orange);
+  font-size: 10px;
+  color: var(--accent-orange);
+}

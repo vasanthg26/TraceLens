@@ -1,0 +1,165 @@
+/**
+ * index.css
+ * Purpose: CSS reset, geek/terminal dark theme
+ * Author: TraceLens
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* ── Base palette: deep terminal black ── */
+  --bg-primary: #05080c;
+  --bg-secondary: #0a0f16;
+  --bg-tertiary: #111820;
+  --bg-hover: #151d28;
+  --bg-glow: #0d1a2a;
+
+  /* ── Borders: subtle grid lines ── */
+  --border-color: #1a2332;
+  --border-light: #243044;
+  --border-glow: rgba(0, 255, 136, 0.15);
+
+  /* ── Text: terminal green tint ── */
+  --text-primary: #c8d6e5;
+  --text-secondary: #6b7d93;
+  --text-muted: #3d4f63;
+
+  /* ── Neon accents ── */
+  --accent-cyan: #00fff2;
+  --accent-green: #00ff88;
+  --accent-blue: #4da6ff;
+  --accent-red: #ff3b4e;
+  --accent-orange: #ff9f1c;
+  --accent-purple: #c678ff;
+  --accent-yellow: #ffd93d;
+  --accent-pink: #ff6bc1;
+
+  /* ── Legacy compat ── */
+  --badge-critical: #ff3b4e;
+  --badge-warning: #ff9f1c;
+  --badge-info: #4da6ff;
+  --badge-good: #00ff88;
+
+  /* ── Fonts: monospace everything ── */
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  --font-sans: 'JetBrains Mono', 'Cascadia Code', monospace;
+
+  /* ── Spacing ── */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --shadow: 0 0 10px rgba(0, 255, 136, 0.05);
+  --shadow-lg: 0 0 30px rgba(0, 255, 136, 0.08);
+
+  /* ── Glow effects ── */
+  --glow-green: 0 0 8px rgba(0, 255, 136, 0.3);
+  --glow-cyan: 0 0 8px rgba(0, 255, 242, 0.3);
+  --glow-red: 0 0 8px rgba(255, 59, 78, 0.3);
+  --glow-blue: 0 0 8px rgba(77, 166, 255, 0.3);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scanline overlay ── */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+}
+
+/* ── Scrollbar: thin neon ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-green);
+  box-shadow: var(--glow-green);
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+}
+
+a:hover {
+  text-shadow: var(--glow-cyan);
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+input, textarea {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* ── Selection: neon highlight ── */
+::selection {
+  background: rgba(0, 255, 136, 0.2);
+  color: var(--accent-green);
+}
+
+/* ── Blink animation for cursor ── */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
