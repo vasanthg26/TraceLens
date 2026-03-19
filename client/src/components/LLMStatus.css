@@ -98,3 +98,12 @@
   color: var(--accent-red);
   word-break: break-all;
 }
+
+.source-ui {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.source-env {
+  color: var(--text-muted);
+}

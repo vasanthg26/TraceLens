@@ -118,7 +118,12 @@ app.post('/api/upload', upload.single('traceFile'), async (req, res) => {
   const fileName = req.file.originalname;
   const fileSize = req.file.size;
 
-  console.log(`[Upload] ${fileName} (${(fileSize / 1024 / 1024).toFixed(1)}MB)`);
+  // UI settings override: sent as form fields, take priority over .env config
+  const llmApiUrl = req.body?.llmApiUrl || null;
+  const llmApiKey = req.body?.llmApiKey || null;
+  const providerOverride = llmApiUrl && llmApiKey ? { baseUrl: llmApiUrl, apiKey: llmApiKey } : null;
+
+  console.log(`[Upload] ${fileName} (${(fileSize / 1024 / 1024).toFixed(1)}MB)${providerOverride ? ' [UI provider]' : ''}`);
   res.json({ status: 'processing', fileName, fileSize });
 
   // Start analysis pipeline
@@ -193,7 +198,8 @@ app.post('/api/upload', upload.single('traceFile'), async (req, res) => {
       (err) => {
         console.error('[LLM Error]', err.message);
         wsBroadcast({ type: 'llm-error', message: err.message });
-      }
+      },
+      providerOverride
     );
 
     // Cleanup uploaded file after processing
@@ -212,7 +218,8 @@ app.post('/api/upload', upload.single('traceFile'), async (req, res) => {
 
 // ── Chat handler ──
 async function handleChat(ws, msg) {
-  const { question, history } = msg;
+  const { question, history, llmApiUrl, llmApiKey } = msg;
+  const providerOverride = llmApiUrl && llmApiKey ? { baseUrl: llmApiUrl, apiKey: llmApiKey } : null;
 
   // Build rich context from parsed results
   let context = '';
@@ -292,7 +299,8 @@ async function handleChat(ws, msg) {
     messages,
     (token) => wsSend(ws, { type: 'chat-token', token }),
     (fullText) => wsSend(ws, { type: 'chat-done', text: fullText }),
-    (err) => wsSend(ws, { type: 'chat-error', message: err.message })
+    (err) => wsSend(ws, { type: 'chat-error', message: err.message }),
+    providerOverride
   );
 }
 

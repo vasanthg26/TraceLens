@@ -9,6 +9,7 @@ import './App.css';
 import FileUpload from './components/FileUpload';
 import ProgressBar from './components/ProgressBar';
 import LLMStatus from './components/LLMStatus';
+import SettingsPanel, { STORAGE_KEY } from './components/SettingsPanel';
 import ResultsTabs from './components/ResultsTabs';
 import ChatPanel from './components/ChatPanel';
 
@@ -41,6 +42,16 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatStreaming, setChatStreaming] = useState(false);
   const chatTokensRef = useRef('');
+
+  // LLM settings from UI (overrides .env when set)
+  const [llmSettings, setLlmSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Error state
   const [appError, setAppError] = useState(null);
@@ -187,6 +198,8 @@ function App() {
 
     const formData = new FormData();
     formData.append('traceFile', file);
+    if (llmSettings?.apiUrl) formData.append('llmApiUrl', llmSettings.apiUrl);
+    if (llmSettings?.apiKey) formData.append('llmApiKey', llmSettings.apiKey);
 
     try {
       const response = await fetch('/api/upload', {
@@ -202,7 +215,7 @@ function App() {
       setAppError(err.message);
       setView('upload');
     }
-  }, []);
+  }, [llmSettings]);
 
   // ── Chat send handler ──
   const handleChatSend = useCallback((question) => {
@@ -221,9 +234,13 @@ function App() {
     wsRef.current.send(JSON.stringify({
       type: 'chat',
       question,
-      history
+      history,
+      ...(llmSettings?.apiUrl && llmSettings?.apiKey ? {
+        llmApiUrl: llmSettings.apiUrl,
+        llmApiKey: llmSettings.apiKey
+      } : {})
     }));
-  }, [chatMessages]);
+  }, [chatMessages, llmSettings]);
 
   // ── Reset handler ──
   const handleReset = useCallback(() => {
@@ -249,7 +266,8 @@ function App() {
           <span>TraceLens</span>
         </div>
         <div className="navbar-right">
-          <LLMStatus />
+          <LLMStatus uiConfig={llmSettings} />
+          <SettingsPanel onSettingsChange={setLlmSettings} />
           <div className="connection-status">
             <div className={`connection-dot ${wsConnected ? '' : 'disconnected'}`} />
             {wsConnected ? 'Connected' : 'Disconnected'}

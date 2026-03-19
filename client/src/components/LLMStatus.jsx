@@ -7,7 +7,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './LLMStatus.css';
 
-function LLMStatus() {
+/**
+ * uiConfig: { apiUrl, apiKey } from SettingsPanel localStorage — when present, test those
+ *           credentials instead of the server's .env config.
+ */
+function LLMStatus({ uiConfig }) {
   const [status, setStatus] = useState({
     provider: '',
     providerName: '',
@@ -19,7 +23,16 @@ function LLMStatus() {
 
   const checkStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/llm/status');
+      let res;
+      if (uiConfig?.apiUrl && uiConfig?.apiKey) {
+        res = await fetch('/api/llm/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiUrl: uiConfig.apiUrl, apiKey: uiConfig.apiKey })
+        });
+      } else {
+        res = await fetch('/api/llm/status');
+      }
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -29,7 +42,7 @@ function LLMStatus() {
     } catch {
       setStatus(prev => ({ ...prev, status: 'offline' }));
     }
-  }, []);
+  }, [uiConfig]);
 
   useEffect(() => {
     checkStatus();
@@ -66,6 +79,12 @@ function LLMStatus() {
             <span>Status</span>
             <span className={`status-text ${dotClass}`}>
               {status.status}
+            </span>
+          </div>
+          <div className="llm-tooltip-row">
+            <span>Source</span>
+            <span className={uiConfig?.apiUrl ? 'source-ui' : 'source-env'}>
+              {uiConfig?.apiUrl ? 'UI' : 'ENV'}
             </span>
           </div>
           {status.latencyMs > 0 && (

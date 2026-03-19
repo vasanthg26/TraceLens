@@ -152,25 +152,29 @@ async function streamRequest(url, headers, body, onToken) {
 
 /**
  * Send a message to the active LLM provider with streaming.
+ * providerOverride: optional { baseUrl, apiKey } from UI settings — takes priority over .env config.
  */
-async function sendMessage(prompt, systemPrompt, onToken, onDone, onError) {
+async function sendMessage(prompt, systemPrompt, onToken, onDone, onError, providerOverride) {
   const system = systemPrompt || SYSTEM_PROMPT;
+  const provider = providerOverride
+    ? { ...activeProvider, baseUrl: providerOverride.baseUrl, apiKey: providerOverride.apiKey }
+    : activeProvider;
 
-  console.log(`[LLM] Sending to ${activeProvider.name} (${activeProvider.model})`);
+  console.log(`[LLM] Sending to ${provider.name || 'UI-configured'} (${provider.model})`);
 
-  const url = `${activeProvider.baseUrl}/chat/completions`;
+  const url = `${provider.baseUrl}/chat/completions`;
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${activeProvider.apiKey}`
+    'Authorization': `Bearer ${provider.apiKey}`
   };
   const body = {
-    model: activeProvider.model,
+    model: provider.model,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: prompt }
     ],
-    max_tokens: activeProvider.maxTokens,
-    temperature: activeProvider.temperature,
+    max_tokens: provider.maxTokens,
+    temperature: provider.temperature,
     stream: true
   };
 
@@ -187,7 +191,7 @@ async function sendMessage(prompt, systemPrompt, onToken, onDone, onError) {
     if (attempt < MAX_RETRIES - 1) {
       await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
     } else {
-      const friendlyMsg = `Failed to get response from ${activeProvider.name} after ${MAX_RETRIES} attempts. ` +
+      const friendlyMsg = `Failed to get response from ${provider.name || 'LLM'} after ${MAX_RETRIES} attempts. ` +
         `Please check your API key and network connection. Error: ${result.error.message}`;
       if (onError) onError(new Error(friendlyMsg));
     }
@@ -196,20 +200,25 @@ async function sendMessage(prompt, systemPrompt, onToken, onDone, onError) {
 
 /**
  * Send a chat message with conversation history.
+ * providerOverride: optional { baseUrl, apiKey } from UI settings — takes priority over .env config.
  */
-async function sendChatMessage(messages, onToken, onDone, onError) {
-  console.log(`[LLM Chat] Sending to ${activeProvider.name} (${activeProvider.model})`);
+async function sendChatMessage(messages, onToken, onDone, onError, providerOverride) {
+  const provider = providerOverride
+    ? { ...activeProvider, baseUrl: providerOverride.baseUrl, apiKey: providerOverride.apiKey }
+    : activeProvider;
 
-  const url = `${activeProvider.baseUrl}/chat/completions`;
+  console.log(`[LLM Chat] Sending to ${provider.name || 'UI-configured'} (${provider.model})`);
+
+  const url = `${provider.baseUrl}/chat/completions`;
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${activeProvider.apiKey}`
+    'Authorization': `Bearer ${provider.apiKey}`
   };
   const body = {
-    model: activeProvider.model,
+    model: provider.model,
     messages,
-    max_tokens: activeProvider.maxTokens,
-    temperature: activeProvider.temperature,
+    max_tokens: provider.maxTokens,
+    temperature: provider.temperature,
     stream: true
   };
 
