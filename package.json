@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "description": "PeopleCode Trace Analyzer — parse and analyze large PeopleCode trace files with AI-powered insights",
   "main": "server/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node --watch server/index.js",
     "client": "cd client && npx vite --port 5173",
-    "build": "cd client && npx vite build",
+    "build": "cd client && npm install --include=dev && npx vite build",
     "start": "node server/index.js"
   },
   "dependencies": {
