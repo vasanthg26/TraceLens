@@ -297,13 +297,15 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset }) {
 
   const health = llmAnalysis?.health || 'fair';
   const errorCount = errors?.errorStats?.total || 0;
+  const criticalCount = errors?.errorStats?.critical || 0;
+  const warningCount = errors?.errorStats?.warnings || 0;
   const valueIssueCount = errors?.errorStats?.valueIssueCount || 0;
   const eventCount = events?.eventCount || 0;
   const varCount = variables?.uniqueVariables || 0;
 
   const tabs = [
     { id: 'performance', label: 'Performance Deep-Dive', badge: null },
-    { id: 'errors', label: 'Errors & Warnings', badge: errorCount },
+    { id: 'errors', label: 'Errors & Warnings', badge: errorCount > 0 ? errorCount : null },
     { id: 'variables', label: 'Variable Tracer', badge: varCount },
     { id: 'values', label: 'Value Issues', badge: valueIssueCount },
     { id: 'events', label: 'Event Flow', badge: eventCount },
@@ -344,8 +346,12 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset }) {
               <span className="stat-label">Loops</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{errorCount}</span>
+              <span className="stat-value">{criticalCount}</span>
               <span className="stat-label">Errors</span>
+            </div>
+            <div className="stat">
+              <span className="stat-value">{warningCount}</span>
+              <span className="stat-label">Warnings</span>
             </div>
           </div>
           <div className="summary-stats-right">
