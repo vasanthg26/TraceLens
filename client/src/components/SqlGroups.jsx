@@ -11,6 +11,10 @@ function SqlGroups({ data, stats }) {
   const [sortBy, setSortBy] = useState('totalTime');
   const [sortDir, setSortDir] = useState('desc');
   const [expandedRow, setExpandedRow] = useState(null);
+  const [selectedProcess, setSelectedProcess] = useState('all');
+
+  const allProcesses = stats?.allProcesses || [];
+  const showProcessFilter = allProcesses.length > 1;
 
   const handleSort = (column) => {
     if (sortBy === column) {
@@ -21,13 +25,18 @@ function SqlGroups({ data, stats }) {
     }
   };
 
+  const filtered = useMemo(() => {
+    if (!showProcessFilter || selectedProcess === 'all') return data;
+    return data.filter(g => g.processes?.includes(selectedProcess));
+  }, [data, selectedProcess, showProcessFilter]);
+
   const sorted = useMemo(() => {
-    return [...data].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const mult = sortDir === 'desc' ? -1 : 1;
       if (sortBy === 'preview') return mult * a.preview.localeCompare(b.preview);
       return mult * ((a[sortBy] || 0) - (b[sortBy] || 0));
     });
-  }, [data, sortBy, sortDir]);
+  }, [filtered, sortBy, sortDir]);
 
   const sortIndicator = (col) => {
     if (sortBy !== col) return '';
@@ -47,6 +56,18 @@ function SqlGroups({ data, stats }) {
           <span>{stats.totalSqlTime.toFixed(2)}s total SQL time</span>
           {stats.nPlusOneCount > 0 && (
             <span className="badge red">N+1: {stats.nPlusOneCount}</span>
+          )}
+          {showProcessFilter && (
+            <select
+              className="process-filter-select"
+              value={selectedProcess}
+              onChange={e => { setSelectedProcess(e.target.value); setExpandedRow(null); }}
+            >
+              <option value="all">All Processes</option>
+              {allProcesses.map(p => (
+                <option key={p} value={p}>Process {p}</option>
+              ))}
+            </select>
           )}
         </div>
       )}

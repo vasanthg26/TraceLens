@@ -287,7 +287,7 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   );
 }
 
-function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset }) {
+function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSaveToHistory, historySaved }) {
   const [activeTab, setActiveTab] = useState('performance');
   const [activeSubTab, setActiveSubTab] = useState('flame');
   const [aiExpanded, setAiExpanded] = useState(false);
@@ -356,6 +356,16 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset }) {
           </div>
           <div className="summary-stats-right">
             <span className={`health-badge ${health}`}>{health.toUpperCase()}</span>
+            {onSaveToHistory && (
+              <button
+                className={`btn-save-history ${historySaved ? 'saved' : ''}`}
+                onClick={onSaveToHistory}
+                disabled={historySaved}
+                title={historySaved ? 'Saved to history' : 'Save to history'}
+              >
+                {historySaved ? 'Saved ✓' : 'Save to History'}
+              </button>
+            )}
             <button className="btn-new-analysis" onClick={onReset}>New Analysis</button>
           </div>
         </div>

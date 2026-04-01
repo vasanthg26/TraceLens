@@ -12,6 +12,7 @@ import LLMStatus from './components/LLMStatus';
 import SettingsPanel, { STORAGE_KEY } from './components/SettingsPanel';
 import ResultsTabs from './components/ResultsTabs';
 import ChatPanel from './components/ChatPanel';
+import HistoryPanel from './components/HistoryPanel';
 
 function App() {
   // Connection state
@@ -53,14 +54,18 @@ function App() {
     }
   });
 
+  // History state
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyCount, setHistoryCount] = useState(0);
+
   // Error state
   const [appError, setAppError] = useState(null);
 
   // ── WebSocket connection ──
   const connectWs = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // In dev mode (Vite on 5173), connect directly to backend on 3000
-    const host = window.location.port === '5173'
+    // In dev mode (any Vite port), connect directly to backend on 3000
+    const host = import.meta.env.DEV
       ? window.location.hostname + ':3000'
       : window.location.host;
     const wsUrl = `${protocol}//${host}`;
@@ -176,6 +181,10 @@ function App() {
         }]);
         break;
 
+      case 'history-saved':
+        setHistoryCount(prev => prev + 1);
+        break;
+
       case 'error':
         setAppError(msg.message);
         break;
@@ -242,6 +251,31 @@ function App() {
     }));
   }, [chatMessages, llmSettings]);
 
+  // ── Load a saved analysis from history ──
+  const handleLoadHistory = useCallback((data) => {
+    setShowHistory(false);
+    setAppError(null);
+    setLlmTokens('');
+    setChatMessages([]);
+    // Restore parse results from saved sections
+    setResults({
+      summary: data.sections?.summary || null,
+      sql: data.sections?.sql || null,
+      loops: data.sections?.loops || null,
+      events: data.sections?.events || null,
+      errors: data.sections?.errors || null,
+      variables: data.sections?.variables || null
+    });
+    setLlmAnalysis({
+      summary: data.summary || '',
+      health: data.overallHealth || 'fair',
+      topRecommendation: data.topRecommendation || '',
+      fixes: []
+    });
+    setLlmError(null);
+    setView('results');
+  }, []);
+
   // ── Reset handler ──
   const handleReset = useCallback(() => {
     setView('upload');
@@ -267,6 +301,16 @@ function App() {
         </div>
         <div className="navbar-right">
           <LLMStatus uiConfig={llmSettings} />
+          <button
+            className="btn-history-nav"
+            onClick={() => setShowHistory(true)}
+            title="View analysis history"
+          >
+            History
+            {historyCount > 0 && (
+              <span className="history-count-badge">{historyCount}</span>
+            )}
+          </button>
           <SettingsPanel onSettingsChange={setLlmSettings} />
           <div className="connection-status">
             <div className={`connection-dot ${wsConnected ? '' : 'disconnected'}`} />
@@ -313,6 +357,13 @@ function App() {
           </div>
         )}
       </div>
+      {/* ── History Panel Overlay ── */}
+      {showHistory && (
+        <HistoryPanel
+          onLoad={handleLoadHistory}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </div>
   );
 }
