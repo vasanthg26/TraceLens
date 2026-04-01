@@ -17,7 +17,9 @@ const fs = require('fs');
 const { parseTraceFile, buildLlmPrompt } = require('./parser/streamParser');
 const { sendMessage, sendChatMessage, SYSTEM_PROMPT } = require('./ai/llmClient');
 const llmHealthRouter = require('./ai/llmHealth');
+const historyRouter = require('./routes/history');
 const { activeProvider, providerKey } = require('./ai/llmConfig');
+const { saveAnalysis } = require('./db/database');
 
 const PORT = parseInt(process.env.PORT) || 3000;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '1024') * 1024 * 1024;
@@ -29,6 +31,9 @@ app.use(express.json());
 
 // LLM health endpoint
 app.use('/api/llm', llmHealthRouter);
+
+// Analysis history endpoints
+app.use('/api/history', historyRouter);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -194,6 +199,40 @@ app.post('/api/upload', upload.single('traceFile'), async (req, res) => {
         global.__lastLlmResponse = fullText;
 
         wsBroadcast({ type: 'llm-done', analysis });
+
+        // Auto-save analysis to SQLite history
+        try {
+          const savedId = saveAnalysis(
+            {
+              filename: fileName,
+              filesize: fileSize,
+              overallHealth: health,
+              summary: fullText.substring(0, 2000),
+              totalLines: parseResults.summary?.totalLines || 0,
+              totalSql: parseResults.sql?.sqlStats?.totalStatements || 0,
+              slowQueries: parseResults.sql?.sqlStats?.slowQueryCount || 0,
+              errorCount: parseResults.errors?.errorStats?.total || 0,
+              loopCount: parseResults.loops?.loopCount || 0,
+              processCount: parseResults.summary?.processCount || 1,
+              topRecommendation: topRecommendation,
+              llmProvider: activeProvider.name || process.env.LLM_PROVIDER || 'unknown',
+              llmModel: activeProvider.model || 'unknown'
+            },
+            {
+              summary: parseResults.summary,
+              sql: parseResults.sql,
+              loops: parseResults.loops,
+              events: parseResults.events,
+              errors: parseResults.errors,
+              variables: parseResults.variables
+            }
+          );
+          // Notify frontend so it can refresh history count
+          wsBroadcast({ type: 'history-saved', id: savedId });
+          console.log(`[History] Saved analysis #${savedId} for ${fileName}`);
+        } catch (dbErr) {
+          console.error('[History] Failed to save analysis:', dbErr.message);
+        }
       },
       (err) => {
         console.error('[LLM Error]', err.message);

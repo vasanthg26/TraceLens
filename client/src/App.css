@@ -51,6 +51,39 @@
   gap: 14px;
 }
 
+/* ── History nav button ── */
+.btn-history-nav {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-history-nav:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.history-count-badge {
+  background: var(--accent-blue);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  min-width: 16px;
+  text-align: center;
+  line-height: 16px;
+  height: 16px;
+}
+
 /* ── Connection: blinking dot ── */
 .connection-status {
   display: flex;

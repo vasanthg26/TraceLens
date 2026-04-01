@@ -1,179 +1,112 @@
 /**
  * eventParser.js
- * Purpose: Parse PeopleCode event markers from actual PeopleTools trace format,
- *          build hierarchy, flame chart data, and capture code+SQL per event
+ * Purpose: Parse PeopleCode program markers using the spec-defined trace format:
+ *            >>> start Nest=00 . Record.Field.EventName
+ *            >>> start-ext Nest=01 FunctionName Record.Field.EventName
+ *            <<< end Nest=00 . Record.Field.EventName Dur=0.050
+ *            <<< end-ext Nest=01 FunctionName Record.Field.EventName Dur=0.030
+ *          Builds event flow list, flame chart hierarchy, and captures SQL/code
+ *          captured between start and end markers.
  * Author: TraceLens
- *
- * Trace format (actual PeopleTools):
- *   >>>>> Begin RECORD.FIELD.EventName level X row Y
- *   Code lines:   N: PeopleCode statement
- *   SQL lines:    Cur#... Dur=... COM Stmt=...
- *   Field ops:    Fetch Field: RECORD.FIELD Value=X
- *   No explicit end markers — events end when the next Begin at same/higher level starts
  */
 
 class EventParser {
   constructor() {
+    // Open events awaiting their <<< end marker
     this.eventStack = [];
+
+    // Flat list of start/end records — used by EventFlowPanel in the UI
     this.eventFlow = [];
+
+    // Top-level flame chart nodes (Nest=00 roots)
     this.flameData = [];
+
+    // Parallel stack of flame nodes being built, each entry: { node, nestLevel, program }
     this.flameStack = [];
+
     this.eventCount = 0;
-    this.lastTimestamp = null;
 
-    // Capture lines inside current event
-    this.currentEventLines = [];   // { type, text, lineNum? }
+    // Lines captured while inside the innermost open event
+    this.currentEventLines = [];
   }
 
-  /**
-   * Strip trace header, return clean content.
-   */
-  stripHeader(line) {
-    const match = line.match(/\d+-\d+\s+[\d.]+\s+(.*)/);
-    return match ? match[1] : line.trim();
-  }
+  // ── Public API ──────────────────────────────────────────────────────────────
 
   /**
-   * Extract ISO timestamp from a trace line header.
-   */
-  extractTimestamp(line) {
-    const tsMatch = line.match(/\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+)\]/);
-    if (tsMatch) {
-      return new Date(tsMatch[1]).getTime() / 1000;
-    }
-    return null;
-  }
-
-  /**
-   * Determine color category based on PeopleCode event name.
-   */
-  eventColor(eventName) {
-    const name = eventName.toLowerCase();
-    if (name.includes('rowinit')) return 'red';
-    if (name.includes('rowinsert')) return 'coral';
-    if (name.includes('rowdelete')) return 'crimson';
-    if (name.includes('rowselect')) return 'salmon';
-    if (name.includes('fieldchange')) return 'blue';
-    if (name.includes('fieldedit')) return 'sky';
-    if (name.includes('fielddefault')) return 'cyan';
-    if (name.includes('fieldformula')) return 'slate';
-    if (name.includes('saveprechange')) return 'orange';
-    if (name.includes('savepostchange')) return 'amber';
-    if (name.includes('saveedit')) return 'gold';
-    if (name.includes('searchinit')) return 'purple';
-    if (name.includes('searchsave')) return 'violet';
-    if (name.includes('activate')) return 'green';
-    if (name.includes('prebuild')) return 'lime';
-    if (name.includes('postbuild')) return 'teal';
-    if (name.includes('prepopup')) return 'pink';
-    if (name.includes('itemselected')) return 'magenta';
-    if (name.includes('workflow')) return 'indigo';
-    return 'grey';
-  }
-
-  /**
-   * Process a single line from the trace file.
+   * Process one raw trace line.
+   * Called by streamParser for every line in the file.
    */
   processLine(line) {
-    const ts = this.extractTimestamp(line);
-    if (ts !== null) this.lastTimestamp = ts;
-    const content = this.stripHeader(line.trim());
+    const content = this._stripHeader(line);
 
-    // Detect event start: >>>>> Begin RECORD.FIELD.EventName level X row Y
-    const beginMatch = line.match(/>>>>>\s*Begin\s+(\S+)\.(\S+)\.(\S+)\s+level\s+(\d+)\s+row\s+(\d+)/);
-    if (beginMatch) {
-      this.eventCount++;
-      const record = beginMatch[1];
-      const field = beginMatch[2];
-      const eventName = beginMatch[3];
-      const level = parseInt(beginMatch[4]);
-      const row = parseInt(beginMatch[5]);
-      const fullLabel = `${record}.${field}.${eventName}`;
-
-      // Close any events at the same or deeper level
-      while (this.eventStack.length > 0) {
-        const top = this.eventStack[this.eventStack.length - 1];
-        if (top.level >= level) {
-          this.closeEvent();
-        } else {
-          break;
-        }
-      }
-
-      // Reset line capture for the new event
-      this.currentEventLines = [];
-
-      const event = {
-        type: 'start',
-        eventName,
-        program: fullLabel,
-        record,
-        field,
-        fullLabel,
-        level,
-        row,
-        startTime: this.lastTimestamp,
-        depth: this.eventStack.length
-      };
-
-      this.eventStack.push(event);
-      this.eventFlow.push({
-        type: 'start',
-        label: fullLabel,
-        eventName,
-        depth: event.depth,
-        level,
-        row,
-        timestamp: this.lastTimestamp,
-        codeLines: [],    // will be populated when event closes
-        sqlLines: [],
-        fieldOps: []
-      });
-
-      // Build flame data node
-      const flameNode = {
-        label: `${fullLabel} (L${level} R${row})`,
-        eventName,
-        color: this.eventColor(eventName),
-        duration: 0,
-        unit: 'ms',
-        children: []
-      };
-      this.flameStack.push(flameNode);
+    // ── >>> start Nest=NN . Record.Field.EventName ──────────────────────────
+    // The dot before the name means "triggered directly by event" (not a called function)
+    const startMatch = content.match(/^>>>\s+start\s+Nest=(\d+)\s+\.\s+(\S+)/);
+    if (startMatch) {
+      const nestLevel = parseInt(startMatch[1], 10);
+      const program = startMatch[2];
+      this._handleStart(nestLevel, null, program);
       return;
     }
 
-    // Only capture lines if we're inside an event
+    // ── >>> start-ext Nest=NN FunctionName Record.Field.EventName ──────────
+    // "ext" means called by another program (functionName is the caller)
+    const startExtMatch = content.match(/^>>>\s+start-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)/);
+    if (startExtMatch) {
+      const nestLevel = parseInt(startExtMatch[1], 10);
+      const functionName = startExtMatch[2];
+      const program = startExtMatch[3];
+      this._handleStart(nestLevel, functionName, program);
+      return;
+    }
+
+    // ── <<< end Nest=NN . Record.Field.EventName Dur=N.NNN ──────────────────
+    const endMatch = content.match(/^<<<\s+end\s+Nest=(\d+)\s+\.\s+(\S+)\s+Dur=([\d.]+)/);
+    if (endMatch) {
+      const nestLevel = parseInt(endMatch[1], 10);
+      const program = endMatch[2];
+      const dur = parseFloat(endMatch[3]);
+      this._handleEnd(nestLevel, program, dur);
+      return;
+    }
+
+    // ── <<< end-ext Nest=NN FunctionName Record.Field.EventName Dur=N.NNN ───
+    const endExtMatch = content.match(/^<<<\s+end-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)\s+Dur=([\d.]+)/);
+    if (endExtMatch) {
+      const nestLevel = parseInt(endExtMatch[1], 10);
+      const program = endExtMatch[3];
+      const dur = parseFloat(endExtMatch[4]);
+      this._handleEnd(nestLevel, program, dur);
+      return;
+    }
+
+    // ── Capture content lines if we are inside at least one event ───────────
     if (this.eventStack.length === 0) return;
 
-    // PeopleCode line: "  N: code..."
-    const codeMatch = content.match(/^\s*(\d+):\s*(.*)/);
+    // PeopleCode line: "  N: statement text"
+    const codeMatch = content.match(/^\s*(\d+):\s+(.*)/);
     if (codeMatch) {
-      const lineNum = parseInt(codeMatch[1]);
       const code = codeMatch[2].trim();
       if (code) {
-        this.currentEventLines.push({
-          type: 'code',
-          lineNum,
-          text: code
-        });
+        this.currentEventLines.push({ type: 'code', lineNum: parseInt(codeMatch[1], 10), text: code });
       }
       return;
     }
 
-    // SQL line: "Cur#... Dur=... COM Stmt=..."
-    const sqlMatch = content.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+COM\s+Stmt=(.+)/);
+    // SQL line from the 8-column format:
+    // Cur#N.DBNAME  RC=N  Dur=N.NNN  COM|CEX|EXE  Stmt=...
+    const sqlMatch = content.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+\w+\s+Stmt=(.+)/);
     if (sqlMatch) {
       this.currentEventLines.push({
         type: 'sql',
-        rc: parseInt(sqlMatch[1]),
+        rc: parseInt(sqlMatch[1], 10),
         dur: parseFloat(sqlMatch[2]),
         text: sqlMatch[3].substring(0, 200)
       });
       return;
     }
 
-    // Fetch/Store Field
+    // Fetch/Store Field line
     const fieldMatch = content.match(/(Fetch|Store) Field:\s+(\S+)\s+Value=(.*)/);
     if (fieldMatch) {
       this.currentEventLines.push({
@@ -186,93 +119,13 @@ class EventParser {
   }
 
   /**
-   * Close the top event on the stack.
-   */
-  closeEvent() {
-    if (this.eventStack.length === 0) return;
-
-    const started = this.eventStack.pop();
-    let duration = 0;
-
-    if (started.startTime !== null && this.lastTimestamp !== null) {
-      duration = Math.max(0, (this.lastTimestamp - started.startTime) * 1000);
-    }
-
-    // Find the matching start entry in eventFlow and attach the captured lines
-    const startIdx = this.findStartEntry(started.fullLabel, started.depth);
-    if (startIdx !== -1) {
-      const codeLines = [];
-      const sqlLines = [];
-      const fieldOps = [];
-
-      for (const entry of this.currentEventLines) {
-        if (entry.type === 'code') {
-          codeLines.push({ lineNum: entry.lineNum, text: entry.text });
-        } else if (entry.type === 'sql') {
-          sqlLines.push({ rc: entry.rc, dur: entry.dur, text: entry.text });
-        } else if (entry.type === 'field') {
-          fieldOps.push({ action: entry.action, field: entry.field, value: entry.value });
-        }
-      }
-
-      this.eventFlow[startIdx].codeLines = codeLines;
-      this.eventFlow[startIdx].sqlLines = sqlLines;
-      this.eventFlow[startIdx].fieldOps = fieldOps;
-    }
-
-    // Reset for next event
-    this.currentEventLines = [];
-
-    this.eventFlow.push({
-      type: 'end',
-      label: started.fullLabel,
-      eventName: started.eventName,
-      depth: started.depth,
-      timestamp: this.lastTimestamp,
-      duration: Math.round(duration * 100) / 100
-    });
-
-    // Complete flame data node
-    if (this.flameStack.length > 0) {
-      const flameNode = this.flameStack.pop();
-      flameNode.duration = Math.round(duration * 100) / 100;
-
-      if (this.flameStack.length > 0) {
-        this.flameStack[this.flameStack.length - 1].children.push(flameNode);
-      } else {
-        this.flameData.push(flameNode);
-      }
-    }
-  }
-
-  /**
-   * Find the matching start entry in eventFlow (search backwards).
-   */
-  findStartEntry(fullLabel, depth) {
-    for (let i = this.eventFlow.length - 1; i >= 0; i--) {
-      const e = this.eventFlow[i];
-      if (e.type === 'start' && e.label === fullLabel && e.depth === depth) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  /**
-   * Return final results.
+   * Return final results after all lines have been processed.
    */
   getResults() {
-    // Flush any remaining unclosed events
+    // Flush any events that never received a <<< end (truncated trace)
     while (this.eventStack.length > 0) {
-      this.closeEvent();
-    }
-    while (this.flameStack.length > 0) {
-      const node = this.flameStack.pop();
-      if (this.flameStack.length > 0) {
-        this.flameStack[this.flameStack.length - 1].children.push(node);
-      } else {
-        this.flameData.push(node);
-      }
+      const entry = this.eventStack.pop();
+      this._finaliseFlameNode(entry.nestLevel, entry.program, 0);
     }
 
     return {
@@ -280,6 +133,192 @@ class EventParser {
       flameData: this.flameData,
       eventCount: this.eventCount
     };
+  }
+
+  // ── Private helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * Strip the trace line header — processNo-lineNo, timestamp, elapsed — and
+   * return the remaining content.
+   *
+   * Input:  "1-23343 18.22.07 0.010 >>> start Nest=00 . REC.FLD.RowInit"
+   * Output: ">>> start Nest=00 . REC.FLD.RowInit"
+   */
+  _stripHeader(line) {
+    // Match: processNo-lineNo  HH.MM.SS  elapsed  <rest>
+    const match = line.match(/^\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+    return match ? match[1].trim() : line.trim();
+  }
+
+  /**
+   * Push a new event onto the stack and record a 'start' entry in eventFlow.
+   *
+   * @param {number}      nestLevel   Nest= value from trace
+   * @param {string|null} functionName  caller function, or null for event-triggered
+   * @param {string}      program     "Record.Field.EventName" string
+   */
+  _handleStart(nestLevel, functionName, program) {
+    this.eventCount++;
+
+    const parts = program.split('.');
+    const eventName = parts.length >= 3 ? parts[parts.length - 1] : program;
+    const record    = parts.length >= 3 ? parts[0] : '';
+    const field     = parts.length >= 3 ? parts[1] : '';
+
+    // depth === nestLevel so the EventFlowPanel indentation works correctly
+    const entry = {
+      nestLevel,
+      program,
+      eventName,
+      record,
+      field,
+      functionName: functionName || null
+    };
+
+    this.eventStack.push(entry);
+
+    // Snapshot the captured lines from the previous open scope into the parent;
+    // start fresh for this new event
+    this.currentEventLines = [];
+
+    this.eventFlow.push({
+      type: 'start',
+      label: program,
+      eventName,
+      record,
+      field,
+      functionName: functionName || null,
+      depth: nestLevel,         // used by EventFlowPanel for indentation
+      nestLevel,
+      codeLines: [],            // populated when event closes
+      sqlLines: [],
+      fieldOps: []
+    });
+
+    // Build flame chart node
+    const flameNode = {
+      label: program,
+      eventName,
+      nestLevel,
+      color: this._eventColor(eventName),
+      duration: 0,
+      unit: 'ms',
+      children: []
+    };
+    this.flameStack.push({ node: flameNode, nestLevel, program });
+  }
+
+  /**
+   * Pop the matching open event, record its duration, and wire it into the
+   * flame chart hierarchy.
+   *
+   * @param {number} nestLevel
+   * @param {string} program
+   * @param {number} dur  seconds from Dur= on the <<< end line
+   */
+  _handleEnd(nestLevel, program, dur) {
+    const durMs = Math.round(dur * 1000 * 100) / 100;
+
+    // Attach captured content lines to the matching 'start' entry in eventFlow
+    const startIdx = this._findStartIndex(program, nestLevel);
+    if (startIdx !== -1) {
+      const codeLines = [];
+      const sqlLines  = [];
+      const fieldOps  = [];
+
+      for (const ln of this.currentEventLines) {
+        if (ln.type === 'code')  codeLines.push({ lineNum: ln.lineNum, text: ln.text });
+        else if (ln.type === 'sql')   sqlLines.push({ rc: ln.rc, dur: ln.dur, text: ln.text });
+        else if (ln.type === 'field') fieldOps.push({ action: ln.action, field: ln.field, value: ln.value });
+      }
+
+      this.eventFlow[startIdx].codeLines = codeLines;
+      this.eventFlow[startIdx].sqlLines  = sqlLines;
+      this.eventFlow[startIdx].fieldOps  = fieldOps;
+    }
+
+    this.currentEventLines = [];
+
+    // Remove from open stack
+    const stackIdx = this.eventStack.findLastIndex(
+      e => e.nestLevel === nestLevel && e.program === program
+    );
+    if (stackIdx !== -1) this.eventStack.splice(stackIdx, 1);
+
+    this.eventFlow.push({
+      type: 'end',
+      label: program,
+      eventName: program.split('.').pop(),
+      depth: nestLevel,
+      nestLevel,
+      duration: durMs
+    });
+
+    this._finaliseFlameNode(nestLevel, program, durMs);
+  }
+
+  /**
+   * Complete a flame chart node and attach it to its parent.
+   */
+  _finaliseFlameNode(nestLevel, program, durMs) {
+    const idx = this.flameStack.findLastIndex(
+      f => f.nestLevel === nestLevel && f.node.label === program
+    );
+    if (idx === -1) return;
+
+    const { node } = this.flameStack[idx];
+    node.duration = durMs;
+    this.flameStack.splice(idx, 1);
+
+    // Parent is the nearest open node with a lower nestLevel
+    const parentIdx = this.flameStack.findLastIndex(f => f.nestLevel < nestLevel);
+    if (parentIdx !== -1) {
+      this.flameStack[parentIdx].node.children.push(node);
+    } else {
+      this.flameData.push(node);
+    }
+  }
+
+  /**
+   * Find the most recent 'start' eventFlow entry matching program + nestLevel.
+   * Searches backwards so nested calls resolve correctly.
+   */
+  _findStartIndex(program, nestLevel) {
+    for (let i = this.eventFlow.length - 1; i >= 0; i--) {
+      const e = this.eventFlow[i];
+      if (e.type === 'start' && e.label === program && e.nestLevel === nestLevel) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Map PeopleCode event names to colour tokens used by the flame chart.
+   * Matches the spec colour assignments exactly.
+   */
+  _eventColor(eventName) {
+    const n = eventName.toLowerCase();
+    if (n === 'rowinit')          return 'red';
+    if (n === 'rowinsert')        return 'coral';
+    if (n === 'rowdelete')        return 'crimson';
+    if (n === 'rowselect')        return 'salmon';
+    if (n === 'fieldchange')      return 'blue';
+    if (n === 'fieldedit')        return 'yellow';
+    if (n === 'fielddefault')     return 'teal';
+    if (n === 'fieldformula')     return 'slate';
+    if (n === 'saveprechange')    return 'orange';
+    if (n === 'savepostchange')   return 'pink';
+    if (n === 'saveedit')         return 'gold';
+    if (n === 'searchinit')       return 'purple';
+    if (n === 'searchsave')       return 'violet';
+    if (n === 'activate')         return 'green';
+    if (n === 'prebuild')         return 'lime';
+    if (n === 'postbuild')        return 'teal';
+    if (n === 'prepopup')         return 'pink';
+    if (n === 'itemselected')     return 'magenta';
+    if (n === 'workflow')         return 'indigo';
+    return 'grey';
   }
 }
 
