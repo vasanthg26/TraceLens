@@ -127,6 +127,7 @@ function inlineMd(text) {
 function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   const [expandedEvent, setExpandedEvent] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(200);
 
   const allKeys = Object.keys(EVENT_LEGEND);
   const isAllActive = !activeFilters || activeFilters.size === allKeys.length;
@@ -152,6 +153,7 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   };
 
   const startEvents = useMemo(() => {
+    setVisibleCount(200);
     if (!events?.eventFlow) return [];
     let starts = events.eventFlow.filter(e => e.type === 'start');
     if (categoryFilter !== 'all') {
@@ -206,7 +208,7 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
       </div>
       <div className="flame-hint">Click to solo · Shift+click to toggle · {startEvents.length} events shown</div>
       <div className="event-flow-list">
-        {startEvents.slice(0, 200).map((event, i) => {
+        {startEvents.slice(0, visibleCount).map((event, i) => {
           const isExpanded = expandedEvent === i;
           const hasCode = event.codeLines?.length > 0;
           const hasSql = event.sqlLines?.length > 0;
@@ -296,9 +298,11 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
             </div>
           );
         })}
-        {startEvents.length > 200 && (
+        {startEvents.length > visibleCount && (
           <div className="event-truncated">
-            ...and {startEvents.length - 200} more events
+            <button className="load-more-btn" onClick={() => setVisibleCount(c => c + 200)}>
+              Load 200 more ({startEvents.length - visibleCount} remaining)
+            </button>
           </div>
         )}
       </div>
