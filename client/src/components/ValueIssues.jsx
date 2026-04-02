@@ -4,13 +4,23 @@
  * Author: TraceLens
  */
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import './ValueIssues.css';
 
 function ValueIssues({ issues }) {
+  const [categoryFilter, setCategoryFilter] = useState('app');
+
   if (!issues || issues.length === 0) {
     return <div className="empty-state">No value issues detected.</div>;
   }
+
+  const appCount = useMemo(() => issues.filter(i => i.category === 'app').length, [issues]);
+  const portalCount = useMemo(() => issues.filter(i => i.category === 'portal').length, [issues]);
+
+  const visible = useMemo(() => {
+    if (categoryFilter === 'all') return issues;
+    return issues.filter(i => i.category === categoryFilter);
+  }, [issues, categoryFilter]);
 
   const typeColors = {
     VALUE: 'blue',
@@ -24,11 +34,22 @@ function ValueIssues({ issues }) {
   return (
     <div className="value-issues">
       <div className="value-issues-header">
-        {issues.length} value issue{issues.length !== 1 ? 's' : ''} found
+        <span>{visible.length} value issue{visible.length !== 1 ? 's' : ''} shown</span>
+        <div className="category-filter">
+          {[['app', appCount], ['all', appCount + portalCount], ['portal', portalCount]].map(([cat, count]) => (
+            <button
+              key={cat}
+              className={`category-btn ${categoryFilter === cat ? 'active' : ''}`}
+              onClick={() => setCategoryFilter(cat)}
+            >
+              {cat === 'all' ? `All (${count})` : cat === 'app' ? `App (${count})` : `Portal (${count})`}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="value-issues-list">
-        {issues.map((issue, i) => (
+        {visible.map((issue, i) => (
           <div key={i} className="value-issue-card">
             <div className="value-issue-top">
               <span className={`badge ${typeColors[issue.type] || 'blue'}`}>

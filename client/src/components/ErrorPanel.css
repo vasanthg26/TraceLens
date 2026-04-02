@@ -10,6 +10,14 @@
   gap: 6px;
 }
 
+.error-category-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
 .error-group {
   border: 1px solid var(--border-color);
   overflow: hidden;
