@@ -224,7 +224,11 @@ class EventParser {
    *   PSAPPSRV: "PSAPPSRV.1234 [...] tok sid uid (tid) \t >>> start..."
    */
   _stripHeader(line) {
-    // PSAPPSRV prefix (tab separator)
+    // New PSAPPSRV format: PSAPPSRV.PID (tid)\t lineNo-seq HH.MM.SS elapsed content
+    const psNewMatch = line.match(/^PSAPPSRV\.\d+\s+\(\d+\)\s+\t\s+\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+    if (psNewMatch) return psNewMatch[1].trim();
+
+    // Original PSAPPSRV prefix: PSAPPSRV.PID [token] tok sid uid (tid)\t content
     const psMatch = line.match(/^PSAPPSRV\.\d+\s+\[.*?\]\s+\S+\s+\S+\s+\S+\s+\(\d+\)\s+\t\s*(.*)/);
     if (psMatch) return psMatch[1].trim();
 
