@@ -174,6 +174,17 @@ class SqlAnalyzer {
         return;
       }
 
+      if (op === 'BIND') {
+        // Inline bind: Cur#... BIND Bind-N type=... value=...
+        const inlineBind = line.match(/Bind-(\d+)\s+type=\S+(?:\s+length=\d+)?\s+value=(.*)/i);
+        if (inlineBind && this._lastActiveCursor && this.cursors.has(this._lastActiveCursor)) {
+          const cursor = this.cursors.get(this._lastActiveCursor);
+          const bindIdx = parseInt(inlineBind[1], 10);
+          cursor.binds[bindIdx - 1] = inlineBind[2].trim().substring(0, 100);
+        }
+        return;
+      }
+
       if (op === 'CLOSE' || op === 'REUSE') {
         if (this.cursors.has(cursorId)) {
           this._finalizeCursor(cursorId);

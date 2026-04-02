@@ -25,6 +25,16 @@ const LEGACY_REGEX = /^(\d+)-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/;
  * Returns { processKey, content } where content is the line after the header.
  */
 function extractLineContext(line) {
+  // New PSAPPSRV format: PSAPPSRV.PID (tid)\t lineNo-seq HH.MM.SS elapsed content
+  const psNewMatch = line.match(/^PSAPPSRV\.(\d+)\s+\((\d+)\)\s+\t\s+\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+  if (psNewMatch) {
+    return {
+      processKey: `${psNewMatch[1]}:${psNewMatch[2]}`,
+      pid: psNewMatch[1],
+      content: psNewMatch[3].trim()
+    };
+  }
+
   const psMatch = line.match(PSAPPSRV_REGEX);
   if (psMatch) {
     const pid      = psMatch[1];
