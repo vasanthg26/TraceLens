@@ -139,8 +139,12 @@ class ErrorParser {
       }
     }
 
-    // Detect errors, warnings, exceptions
-    const isError = /\b(Error|PeopleCode Error|Warning|Exception|Uninitialized|SQL Error)\b/i.test(trimmed);
+    // Detect errors, warnings, exceptions.
+    // Skip PeopleCode source code lines (e.g. "5: catch Exception &e") — these are traced
+    // program text, not actual error conditions. Matching "Exception" on those lines causes
+    // thousands of false CRITICAL entries for every try/catch block in every program.
+    const isPcCodeLine = !!codeLineMatch;
+    const isError = !isPcCodeLine && /\b(Error|PeopleCode Error|Warning|Exception|Uninitialized|SQL Error)\b/i.test(trimmed);
 
     // Detect SQL errors via return codes > 1
     // RC=0 = success, RC=1 = no rows (normal for Fetch), RC>1 = real DB error
@@ -156,6 +160,7 @@ class ErrorParser {
         rawLine: content.substring(0, 300),
         program: this.currentProgram,
         event: this.currentEvent,
+        category: this._classifyProgram(this.currentProgram),
         traceLineNumber: this.lineNumber,
         codeContext: [...this.codeBuffer],
         sqlContext: [...this.sqlBuffer],
@@ -172,6 +177,7 @@ class ErrorParser {
         rawLine: content.substring(0, 300),
         program: this.currentProgram,
         event: this.currentEvent,
+        category: this._classifyProgram(this.currentProgram),
         traceLineNumber: this.lineNumber,
         codeContext: [...this.codeBuffer],
         sqlContext: [...this.sqlBuffer],
@@ -192,6 +198,7 @@ class ErrorParser {
         rawLine: content.substring(0, 300),
         program: this.currentProgram,
         event: this.currentEvent,
+        category: this._classifyProgram(this.currentProgram),
         traceLineNumber: this.lineNumber,
         // Clean PeopleCode context (before)
         codeContext: [...this.codeBuffer],
@@ -253,6 +260,7 @@ class ErrorParser {
       this.valueIssues.push({
         type: 'UNINIT',
         variable: uninitMatch[1],
+        category: this._classifyProgram(this.currentProgram),
         location: `${this.currentProgram} > ${this.currentEvent}`,
         description: `Uninitialized variable "${uninitMatch[1]}" — may cause unexpected behavior in SQL binds or conditionals`,
         fix: `Initialize "${uninitMatch[1]}" before use. Check if it's populated from a Component Buffer field that may be empty on new rows.`,
@@ -269,6 +277,7 @@ class ErrorParser {
       this.valueIssues.push({
         type: 'NULL',
         variable: field,
+        category: this._classifyProgram(this.currentProgram),
         location: `${this.currentProgram} > ${this.currentEvent}`,
         description: `Field "${field}" contains null value — if used in SQL bind or conditional, this may cause incorrect results or errors`,
         fix: `Check if "${field.split('.').pop()}" is populated before use. The rowset may have been filled with no matching rows, leaving default (null) values.`,
@@ -283,6 +292,7 @@ class ErrorParser {
       this.valueIssues.push({
         type: 'EMPTY',
         variable: fetchMatch[1],
+        category: this._classifyProgram(this.currentProgram),
         location: `${this.currentProgram} > ${this.currentEvent}`,
         description: `Field "${fetchMatch[1]}" fetched with empty value`,
         fix: `Add a null check: If All(${fetchMatch[1].split('.').pop()}) Then ... End-If`,
@@ -301,6 +311,7 @@ class ErrorParser {
         this.valueIssues.push({
           type: 'NULL_BIND',
           variable: `Bind-${bindNullMatch[1]}`,
+          category: this._classifyProgram(this.currentProgram),
           location: `${this.currentProgram} > ${this.currentEvent}`,
           description: `Null/empty value passed as Bind-${bindNullMatch[1]} to SQL — likely from a field that "Contains Null Value". SQL results may be incorrect or trigger unexpected error conditions.`,
           fix: `Verify that all field values used as SQL bind variables are populated before the SQL executes. Check preceding "Fetch Field ... Contains Null Value" lines.`,
@@ -316,6 +327,7 @@ class ErrorParser {
       this.valueIssues.push({
         type: 'OVERFLOW',
         variable: 'numeric field',
+        category: this._classifyProgram(this.currentProgram),
         location: `${this.currentProgram} > ${this.currentEvent}`,
         description: `Numeric overflow detected — value exceeds field capacity`,
         fix: `Check field length definition and validate input range before assignment.`,
@@ -323,6 +335,24 @@ class ErrorParser {
         codeContext: [...this.codeBuffer]
       });
     }
+  }
+
+  /**
+   * Classify a program as 'portal' (PeopleTools infrastructure) or 'app' (business logic).
+   */
+  _classifyProgram(program) {
+    if (!program) return 'app';
+    const record = program.split('.')[0].toUpperCase();
+    const PORTAL_EXACT = new Set(['PSOPTIONS', 'TRACE_SQL', 'PSVERSION', 'INSTALLATION', 'PSMSGCATDEFN']);
+    if (PORTAL_EXACT.has(record)) return 'portal';
+    if (
+      record.startsWith('PT') ||
+      record.startsWith('FUNCLIB_PT') ||
+      record.startsWith('FUNCLIB_PORTAL') ||
+      record.startsWith('WEBLIB_PT') ||
+      record.startsWith('WEBLIB_PTBR')
+    ) return 'portal';
+    return 'app';
   }
 
   /**

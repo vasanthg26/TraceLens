@@ -4,21 +4,30 @@
  * Author: TraceLens
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import './ErrorPanel.css';
 
 function ErrorPanel({ errors }) {
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [expandedError, setExpandedError] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('app');
 
   if (!errors || errors.length === 0) {
     return <div className="empty-state">No errors or warnings found. Clean trace!</div>;
   }
 
+  const appCount = useMemo(() => errors.filter(e => e.category === 'app').length, [errors]);
+  const portalCount = useMemo(() => errors.filter(e => e.category === 'portal').length, [errors]);
+
+  const visibleErrors = useMemo(() => {
+    if (categoryFilter === 'all') return errors;
+    return errors.filter(e => e.category === categoryFilter);
+  }, [errors, categoryFilter]);
+
   const grouped = {
-    critical: errors.filter(e => e.severity === 'critical'),
-    warning: errors.filter(e => e.severity === 'warning'),
-    info: errors.filter(e => e.severity === 'info')
+    critical: visibleErrors.filter(e => e.severity === 'critical'),
+    warning: visibleErrors.filter(e => e.severity === 'warning'),
+    info: visibleErrors.filter(e => e.severity === 'info')
   };
 
   const toggleGroup = (group) => {
@@ -39,6 +48,17 @@ function ErrorPanel({ errors }) {
 
   return (
     <div className="error-panel">
+      <div className="error-category-bar">
+        {[['app', appCount], ['all', appCount + portalCount], ['portal', portalCount]].map(([cat, count]) => (
+          <button
+            key={cat}
+            className={`category-btn ${categoryFilter === cat ? 'active' : ''}`}
+            onClick={() => { setCategoryFilter(cat); setExpandedError(null); }}
+          >
+            {cat === 'all' ? `All (${count})` : cat === 'app' ? `App (${count})` : `Portal (${count})`}
+          </button>
+        ))}
+      </div>
       {Object.entries(grouped).map(([severity, items]) => {
         if (items.length === 0) return null;
         const isCollapsed = collapsedGroups[severity];
