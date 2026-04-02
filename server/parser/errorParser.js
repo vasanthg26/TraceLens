@@ -44,7 +44,7 @@ class ErrorParser {
     if (upper.includes('PEOPLECODE ERROR') || upper.includes('SQL ERROR') || upper.includes('EXCEPTION')) {
       return 'critical';
     }
-    if (upper.includes('WARNING') || upper.includes('UNINITIALIZED') || upper.includes('RC=1')) {
+    if (upper.includes('WARNING') || upper.includes('UNINITIALIZED')) {
       return 'warning';
     }
     return 'info';
@@ -133,9 +133,10 @@ class ErrorParser {
     // Detect errors, warnings, exceptions
     const isError = /\b(Error|PeopleCode Error|Warning|Exception|Uninitialized|SQL Error)\b/i.test(trimmed);
 
-    // Detect SQL errors via non-zero return codes
-    const rcMatch = trimmed.match(/RC=(\d+)/);
-    const isSqlError = rcMatch && rcMatch[1] !== '0';
+    // Detect SQL errors via return codes > 1
+    // RC=0 = success, RC=1 = no rows (normal for Fetch), RC>1 = real DB error
+    const rcMatch = trimmed.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)/);
+    const isSqlError = rcMatch && parseInt(rcMatch[1], 10) > 1;
 
     // Detect EPO (SQL parse error) and ERR (SQL runtime error) lines
     const epoMatch = trimmed.match(/EPO\s+error\s+pos=(\d+)[:\s]+(.*)/i);

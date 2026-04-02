@@ -234,6 +234,7 @@ class SqlAnalyzer {
    * @param {object}      meta      optional: { comDur, execDur, fetchDur, binds, rc }
    */
   recordSql(rawSql, elapsed, processNo = null, meta = {}) {
+    if (!rawSql) return null;
     this.totalSqlCount++;
     this.totalSqlTime += elapsed;
 
