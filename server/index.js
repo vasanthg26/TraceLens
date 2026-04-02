@@ -285,12 +285,12 @@ async function handleChat(ws, msg) {
   }
 
   // Add variable trace data for context
+  const varMention = question.match(/&\w+|\b[A-Z_]+\.[A-Z_]+\b/g);
   if (global.__lastParseResults?.variables) {
     const vars = global.__lastParseResults.variables;
     context += `## Variable Tracking: ${vars.uniqueVariables} unique variables, ${vars.totalEvents} trace events\n`;
 
-    // Check if user is asking about a specific variable
-    const varMention = question.match(/&\w+|\b[A-Z_]+\.[A-Z_]+\b/g);
+    // Check if user is asking about a specific variable/field
     if (varMention && vars.events) {
       for (const varName of varMention.slice(0, 3)) {
         const term = varName.toLowerCase();
@@ -303,10 +303,31 @@ async function handleChat(ws, msg) {
           matches.slice(0, 20).forEach(e => {
             context += `  Line ${e.lineNumber} [${e.type}] ${e.variable} = ${e.value} (${e.context.program}.${e.context.event})\n`;
           });
+        } else {
+          context += `\n### Variable trace for "${varName}": NOT FOUND — this field/variable was never fetched, stored, or assigned during this transaction.\n`;
         }
       }
     }
     context += '\n';
+  }
+
+  // Search SQL for tables mentioned in the question
+  if (varMention && global.__lastParseResults?.sql?.sqlGroups) {
+    const tableNames = varMention
+      .map(v => v.split('.')[0].toUpperCase())
+      .filter(t => t.length > 3);
+    const relevantSql = global.__lastParseResults.sql.sqlGroups.filter(g =>
+      tableNames.some(t => g.normalizedSql.toUpperCase().includes(t))
+    );
+    if (relevantSql.length > 0) {
+      context += `## SQL involving mentioned tables (${relevantSql.length} statements):\n`;
+      relevantSql.slice(0, 10).forEach((g, i) => {
+        context += `${i + 1}. [${g.count}x, ${g.totalTime.toFixed(3)}s] ${g.normalizedSql.substring(0, 300)}\n`;
+      });
+      context += '\n';
+    } else if (tableNames.length > 0) {
+      context += `## SQL involving mentioned tables: NO SQL statements found referencing ${tableNames.join(', ')} in this trace.\n\n`;
+    }
   }
 
   // Add error details
@@ -328,7 +349,12 @@ async function handleChat(ws, msg) {
     ? `Here is the full trace analysis context:\n\n${context}\n\nUser question: ${question}`
     : question;
 
-  const chatSystemPrompt = SYSTEM_PROMPT + `\n\nYou are now in a chat conversation about the trace analysis above. Answer questions specifically about the trace data. Reference actual SQL statements, variable values, event names, and program names from the trace. If the user asks about a variable, trace its value path. If they ask about an error, explain the code context. Be specific and actionable.`;
+  const chatSystemPrompt = SYSTEM_PROMPT + `\n\nYou are now in a chat conversation about the trace analysis above. CRITICAL RULES:
+1. ONLY answer based on data in the context above. Never give generic advice or suggest steps the user could manually take.
+2. If a field or variable is marked "NOT FOUND" in the context, say exactly that: "PAYMENT_ITEM.BUSINESS_UNIT was not fetched, stored, or used in any SQL during this transaction." Do not suggest how to look for it.
+3. If SQL involving a table is marked "NO SQL statements found", state that directly.
+4. Reference actual line numbers, program names, event names, SQL statements, and values from the trace context.
+5. If the trace data does not contain the answer, say so in one sentence. Do not pad the response with generic PeopleCode advice.`;
 
   const messages = [
     { role: 'system', content: chatSystemPrompt },
