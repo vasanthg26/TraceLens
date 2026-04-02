@@ -113,6 +113,8 @@ function App() {
     switch (msg.type) {
       case 'status':
         if (msg.status === 'parsing') setView('progress');
+        // Show results as soon as parsing is done — don't block on LLM
+        if (msg.status === 'analyzing') setView('results');
         break;
 
       case 'progress':
