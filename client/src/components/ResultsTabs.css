@@ -310,6 +310,39 @@
   letter-spacing: 1.5px;
 }
 
+/* ── Component Context Bar ── */
+.component-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 1rem;
+  background: #0f0f1a;
+  border-bottom: 1px solid #1e1e2e;
+  flex-wrap: wrap;
+}
+
+.context-label {
+  font-size: 0.72rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+.context-chip {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.context-chip.portal    { background: #1a2a3a; color: #7aa2f7; border: 1px solid #2a3a5a; }
+.context-chip.menu      { background: #1a3a2a; color: #a6e3a1; border: 1px solid #2a5a3a; }
+.context-chip.component { background: #2a1a3a; color: #cba6f7; border: 1px solid #4a2a6a; }
+
 /* ── Tabs: terminal-style ── */
 .tabs-bar {
   display: flex;
