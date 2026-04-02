@@ -4,7 +4,7 @@
   "description": "PeopleCode Trace Analyzer — parse and analyze large PeopleCode trace files with AI-powered insights",
   "main": "server/index.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
