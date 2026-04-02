@@ -10,17 +10,18 @@ import './ValueIssues.css';
 function ValueIssues({ issues }) {
   const [categoryFilter, setCategoryFilter] = useState('app');
 
-  if (!issues || issues.length === 0) {
-    return <div className="empty-state">No value issues detected.</div>;
-  }
-
-  const appCount = useMemo(() => issues.filter(i => i.category === 'app').length, [issues]);
-  const portalCount = useMemo(() => issues.filter(i => i.category === 'portal').length, [issues]);
+  const appCount = useMemo(() => (issues || []).filter(i => i.category === 'app').length, [issues]);
+  const portalCount = useMemo(() => (issues || []).filter(i => i.category === 'portal').length, [issues]);
 
   const visible = useMemo(() => {
+    if (!issues) return [];
     if (categoryFilter === 'all') return issues;
     return issues.filter(i => i.category === categoryFilter);
   }, [issues, categoryFilter]);
+
+  if (!issues || issues.length === 0) {
+    return <div className="empty-state">No value issues detected.</div>;
+  }
 
   const typeColors = {
     VALUE: 'blue',

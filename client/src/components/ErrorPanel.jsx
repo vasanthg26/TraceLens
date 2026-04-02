@@ -12,17 +12,18 @@ function ErrorPanel({ errors }) {
   const [expandedError, setExpandedError] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('app');
 
-  if (!errors || errors.length === 0) {
-    return <div className="empty-state">No errors or warnings found. Clean trace!</div>;
-  }
-
-  const appCount = useMemo(() => errors.filter(e => e.category === 'app').length, [errors]);
-  const portalCount = useMemo(() => errors.filter(e => e.category === 'portal').length, [errors]);
+  const appCount = useMemo(() => (errors || []).filter(e => e.category === 'app').length, [errors]);
+  const portalCount = useMemo(() => (errors || []).filter(e => e.category === 'portal').length, [errors]);
 
   const visibleErrors = useMemo(() => {
+    if (!errors) return [];
     if (categoryFilter === 'all') return errors;
     return errors.filter(e => e.category === categoryFilter);
   }, [errors, categoryFilter]);
+
+  if (!errors || errors.length === 0) {
+    return <div className="empty-state">No errors or warnings found. Clean trace!</div>;
+  }
 
   const grouped = {
     critical: visibleErrors.filter(e => e.severity === 'critical'),
