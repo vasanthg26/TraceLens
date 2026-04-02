@@ -120,15 +120,15 @@ function SqlGroups({ data, stats }) {
                         </div>
                         <div className="sql-detail-stats">
                           <div><span>Executions:</span> {group.count}</div>
-                          <div><span>Max Time:</span> {group.maxTime.toFixed(3)}s</div>
-                          <div><span>Bind Variations:</span> {group.bindVariations.length}</div>
+                          <div><span>Max Time:</span> {(group.maxTime || 0).toFixed(3)}s</div>
+                          <div><span>Bind Variations:</span> {(group.bindSamples || group.bindVariations || []).length}</div>
                         </div>
-                        {group.bindVariations.length > 0 && (
+                        {(group.bindSamples || group.bindVariations || []).length > 0 && (
                           <div className="sql-detail-section">
                             <h4>Sample Bind Values</h4>
                             <ul>
-                              {group.bindVariations.map((bv, j) => (
-                                <li key={j}><code>{bv}</code></li>
+                              {(group.bindSamples || group.bindVariations || []).map((bv, j) => (
+                                <li key={j}><code>{Array.isArray(bv) ? bv.join(', ') : bv}</code></li>
                               ))}
                             </ul>
                           </div>
