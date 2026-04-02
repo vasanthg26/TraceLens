@@ -69,6 +69,36 @@
   box-shadow: var(--glow-cyan);
 }
 
+.category-filter {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px;
+}
+
+.category-btn {
+  padding: 2px 10px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.category-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.category-btn.active {
+  background: rgba(0, 255, 242, 0.08);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
 .flame-hint {
   font-size: 9px;
   color: var(--text-muted);

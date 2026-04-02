@@ -15,6 +15,8 @@ function ValueIssues({ issues }) {
   const typeColors = {
     VALUE: 'blue',
     NULL: 'orange',
+    NULL_BIND: 'red',
+    EMPTY: 'orange',
     UNINIT: 'red',
     OVERFLOW: 'purple'
   };
