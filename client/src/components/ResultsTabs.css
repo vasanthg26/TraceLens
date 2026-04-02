@@ -660,10 +660,23 @@
 .event-truncated {
   padding: 10px;
   text-align: center;
-  color: var(--text-muted);
+}
+
+.load-more-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--accent-cyan);
   font-size: 10px;
+  font-family: inherit;
   text-transform: uppercase;
   letter-spacing: 1px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.load-more-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-cyan);
 }
 
 .empty-state {
