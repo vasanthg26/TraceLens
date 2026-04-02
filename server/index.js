@@ -136,9 +136,11 @@ app.post('/api/upload', upload.single('traceFile'), async (req, res) => {
     // Phase 1: Parse the trace file
     wsBroadcast({ type: 'status', status: 'parsing' });
 
-    const parseResults = await parseTraceFile(filePath, (progress) => {
-      wsBroadcast({ type: 'progress', ...progress });
-    });
+    const parseResults = await parseTraceFile(
+      filePath,
+      (progress) => { wsBroadcast({ type: 'progress', ...progress }); },
+      (metadata) => { wsBroadcast({ type: 'metadata', data: metadata }); }
+    );
 
     // Send parse results section by section
     wsBroadcast({ type: 'partial', section: 'summary', data: parseResults.summary });

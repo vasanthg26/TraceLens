@@ -137,6 +137,39 @@ class ErrorParser {
     const rcMatch = trimmed.match(/RC=(\d+)/);
     const isSqlError = rcMatch && rcMatch[1] !== '0';
 
+    // Detect EPO (SQL parse error) and ERR (SQL runtime error) lines
+    const epoMatch = trimmed.match(/EPO\s+error\s+pos=(\d+)[:\s]+(.*)/i);
+    if (epoMatch) {
+      this.errors.push({
+        severity: 'critical',
+        title: `SQL parse error at position ${epoMatch[1]}: ${epoMatch[2].trim().substring(0, 120)}`,
+        rawLine: content.substring(0, 300),
+        program: this.currentProgram,
+        event: this.currentEvent,
+        traceLineNumber: this.lineNumber,
+        codeContext: [...this.codeBuffer],
+        sqlContext: [...this.sqlBuffer],
+        contextBefore: this.rawContextBuffer.slice(-this.contextSize).map(l => this.stripHeader(l)),
+        contextAfter: []
+      });
+    }
+
+    const errMatch = trimmed.match(/ERR\s+rtncd=(\d+)/i);
+    if (errMatch && errMatch[1] !== '0') {
+      this.errors.push({
+        severity: 'warning',
+        title: `SQL runtime error: rtncd=${errMatch[1]}`,
+        rawLine: content.substring(0, 300),
+        program: this.currentProgram,
+        event: this.currentEvent,
+        traceLineNumber: this.lineNumber,
+        codeContext: [...this.codeBuffer],
+        sqlContext: [...this.sqlBuffer],
+        contextBefore: this.rawContextBuffer.slice(-this.contextSize).map(l => this.stripHeader(l)),
+        contextAfter: []
+      });
+    }
+
     if (isError || isSqlError) {
       const severity = isSqlError ? 'warning' : this.classifySeverity(trimmed);
       const title = isSqlError

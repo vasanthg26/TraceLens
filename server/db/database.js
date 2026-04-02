@@ -1,11 +1,11 @@
 /**
  * database.js
- * Purpose: SQLite database setup using Node's built-in node:sqlite (Node 22+);
+ * Purpose: SQLite database setup using better-sqlite3;
  *          creates tables on first run, exports CRUD functions for analysis history.
  * Author: TraceLens
  */
 
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
@@ -15,10 +15,10 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const db = new DatabaseSync(path.join(dataDir, 'tracelens.db'));
+const db = new Database(path.join(dataDir, 'tracelens.db'));
 
 // Enable WAL mode for better concurrent read performance
-db.exec('PRAGMA journal_mode=WAL');
+db.pragma('journal_mode = WAL');
 
 // ── Create tables on first run ──
 db.exec(`
@@ -98,8 +98,7 @@ const stmtClearAll = db.prepare(`DELETE FROM analyses`);
  * @returns {number} new analysis id
  */
 function saveAnalysis(summary, details) {
-  db.exec('BEGIN');
-  try {
+  const run = db.transaction(() => {
     const info = stmtInsertAnalysis.run({
       $filename:          summary.filename          ?? null,
       $filesize:          summary.filesize          ?? null,
@@ -126,12 +125,10 @@ function saveAnalysis(summary, details) {
       });
     }
 
-    db.exec('COMMIT');
     return id;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
+
+  return run();
 }
 
 /**

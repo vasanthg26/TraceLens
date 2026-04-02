@@ -1,66 +1,109 @@
 /**
  * eventParser.js
- * Purpose: Parse PeopleCode program markers using the spec-defined trace format:
+ * Purpose: Parse PeopleCode program markers from PeopleTools trace files.
+ *          Supports two trace formats:
+ *
+ *          Legacy (PT 8.4x):
  *            >>> start Nest=00 . Record.Field.EventName
  *            >>> start-ext Nest=01 FunctionName Record.Field.EventName
  *            <<< end Nest=00 . Record.Field.EventName Dur=0.050
  *            <<< end-ext Nest=01 FunctionName Record.Field.EventName Dur=0.030
- *          Builds event flow list, flame chart hierarchy, and captures SQL/code
- *          captured between start and end markers.
+ *
+ *          New (PT 8.5x+):
+ *            >>>>> Begin Record.Field.Event level N row N
+ *            <<<<< End Record.Field.Event level N row N Dur=N.NNN
+ *
+ *          App Class calls:
+ *            call constructor Record.Field.Event
+ *            call method MethodName Record.Field.Event
+ *            call setter PropertyName Record.Field.Event
+ *            call getter PropertyName Record.Field.Event
+ *
+ *          Parameter value lines (follow call lines):
+ *            Str[N]=value, Bool=value, Num=value, Object=value
+ *
  * Author: TraceLens
  */
 
 class EventParser {
   constructor() {
-    // Open events awaiting their <<< end marker
+    // Open events awaiting their end marker
     this.eventStack = [];
 
     // Flat list of start/end records — used by EventFlowPanel in the UI
     this.eventFlow = [];
 
-    // Top-level flame chart nodes (Nest=00 roots)
+    // Top-level flame chart nodes
     this.flameData = [];
 
-    // Parallel stack of flame nodes being built, each entry: { node, nestLevel, program }
+    // Parallel stack of flame nodes being built
     this.flameStack = [];
 
     this.eventCount = 0;
 
     // Lines captured while inside the innermost open event
     this.currentEventLines = [];
+
+    // Track the last call line for associating parameter values
+    this._lastCallIdx = -1;
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
   /**
    * Process one raw trace line.
-   * Called by streamParser for every line in the file.
    */
   processLine(line) {
     const content = this._stripHeader(line);
 
-    // ── >>> start Nest=NN . Record.Field.EventName ──────────────────────────
-    // The dot before the name means "triggered directly by event" (not a called function)
+    // ── New format: >>>>> Begin Record.Field.Event level N row N ────────────
+    const beginMatch = content.match(/^>>>>>\s+Begin\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)/);
+    if (beginMatch) {
+      const program = beginMatch[1];
+      const level = parseInt(beginMatch[2], 10);
+      this._handleStart(level, null, program, 'new');
+      return;
+    }
+
+    // ── New format: <<<<< End Record.Field.Event level N row N Dur=N.NNN ────
+    const endNewMatch = content.match(/^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)\s+Dur=([\d.]+)/);
+    if (endNewMatch) {
+      const program = endNewMatch[1];
+      const level = parseInt(endNewMatch[2], 10);
+      const dur = parseFloat(endNewMatch[4]);
+      this._handleEnd(level, program, dur);
+      return;
+    }
+
+    // Partial new End without Dur (truncated)
+    const endNewNoDur = content.match(/^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)/);
+    if (endNewNoDur) {
+      const program = endNewNoDur[1];
+      const level = parseInt(endNewNoDur[2], 10);
+      this._handleEnd(level, program, 0);
+      return;
+    }
+
+    // ── Legacy format: >>> start Nest=NN . Record.Field.EventName ───────────
     const startMatch = content.match(/^>>>\s+start\s+Nest=(\d+)\s+\.\s+(\S+)/);
     if (startMatch) {
       const nestLevel = parseInt(startMatch[1], 10);
       const program = startMatch[2];
-      this._handleStart(nestLevel, null, program);
+      this._handleStart(nestLevel, null, program, 'legacy');
       return;
     }
 
-    // ── >>> start-ext Nest=NN FunctionName Record.Field.EventName ──────────
-    // "ext" means called by another program (functionName is the caller)
+    // ── Legacy: >>> start-ext Nest=NN FunctionName Record.Field.EventName ───
     const startExtMatch = content.match(/^>>>\s+start-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)/);
     if (startExtMatch) {
       const nestLevel = parseInt(startExtMatch[1], 10);
       const functionName = startExtMatch[2];
       const program = startExtMatch[3];
-      this._handleStart(nestLevel, functionName, program);
+      this._handleStart(nestLevel, functionName, program, 'legacy');
       return;
     }
 
-    // ── <<< end Nest=NN . Record.Field.EventName Dur=N.NNN ──────────────────
+    // ── Legacy: <<< end Nest=NN . Record.Field.EventName Dur=N.NNN ──────────
     const endMatch = content.match(/^<<<\s+end\s+Nest=(\d+)\s+\.\s+(\S+)\s+Dur=([\d.]+)/);
     if (endMatch) {
       const nestLevel = parseInt(endMatch[1], 10);
@@ -70,7 +113,7 @@ class EventParser {
       return;
     }
 
-    // ── <<< end-ext Nest=NN FunctionName Record.Field.EventName Dur=N.NNN ───
+    // ── Legacy: <<< end-ext Nest=NN FunctionName Record.Field.EventName Dur ─
     const endExtMatch = content.match(/^<<<\s+end-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)\s+Dur=([\d.]+)/);
     if (endExtMatch) {
       const nestLevel = parseInt(endExtMatch[1], 10);
@@ -80,7 +123,44 @@ class EventParser {
       return;
     }
 
-    // ── Capture content lines if we are inside at least one event ───────────
+    // ── App Class calls ──────────────────────────────────────────────────────
+    // call constructor|method|setter|getter [MethodName] Record.Field.Event
+    const callMatch = content.match(/^call\s+(constructor|method|setter|getter)(?:\s+(\S+))?\s+(\S+\.\S+\.\S+)/i);
+    if (callMatch) {
+      const callType = callMatch[1].toLowerCase();
+      const methodName = callMatch[2] || null;
+      const program = callMatch[3];
+      if (this.eventStack.length > 0) {
+        const callEntry = {
+          type: 'call',
+          callType,
+          methodName,
+          program,
+          params: []
+        };
+        this.currentEventLines.push(callEntry);
+        this._lastCallIdx = this.currentEventLines.length - 1;
+      }
+      return;
+    }
+
+    // ── Parameter value lines (follow call lines) ────────────────────────────
+    if (this._lastCallIdx >= 0 && this.eventStack.length > 0) {
+      const paramMatch = content.match(/^(Str\[\d+\]|Bool|Num|Object)=(.*)/);
+      if (paramMatch) {
+        const entry = this.currentEventLines[this._lastCallIdx];
+        if (entry && entry.type === 'call') {
+          entry.params.push({ key: paramMatch[1], value: paramMatch[2].trim().substring(0, 200) });
+        }
+        return;
+      }
+    }
+    // Non-param line resets the call context
+    if (content && !content.match(/^(Str\[\d+\]|Bool|Num|Object)=/)) {
+      this._lastCallIdx = -1;
+    }
+
+    // ── Capture content lines if inside at least one event ──────────────────
     if (this.eventStack.length === 0) return;
 
     // PeopleCode line: "  N: statement text"
@@ -93,8 +173,7 @@ class EventParser {
       return;
     }
 
-    // SQL line from the 8-column format:
-    // Cur#N.DBNAME  RC=N  Dur=N.NNN  COM|CEX|EXE  Stmt=...
+    // SQL line
     const sqlMatch = content.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+\w+\s+Stmt=(.+)/);
     if (sqlMatch) {
       this.currentEventLines.push({
@@ -122,7 +201,7 @@ class EventParser {
    * Return final results after all lines have been processed.
    */
   getResults() {
-    // Flush any events that never received a <<< end (truncated trace)
+    // Flush any events that never received an end marker (truncated trace)
     while (this.eventStack.length > 0) {
       const entry = this.eventStack.pop();
       this._finaliseFlameNode(entry.nestLevel, entry.program, 0);
@@ -138,26 +217,28 @@ class EventParser {
   // ── Private helpers ──────────────────────────────────────────────────────────
 
   /**
-   * Strip the trace line header — processNo-lineNo, timestamp, elapsed — and
-   * return the remaining content.
+   * Strip the trace line header and return the remaining content.
    *
-   * Input:  "1-23343 18.22.07 0.010 >>> start Nest=00 . REC.FLD.RowInit"
-   * Output: ">>> start Nest=00 . REC.FLD.RowInit"
+   * Handles two formats:
+   *   Legacy: "1-23343 18.22.07 0.010 >>> start Nest=00 . REC.FLD.RowInit"
+   *   PSAPPSRV: "PSAPPSRV.1234 [...] tok sid uid (tid) \t >>> start..."
    */
   _stripHeader(line) {
-    // Match: processNo-lineNo  HH.MM.SS  elapsed  <rest>
-    const match = line.match(/^\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
-    return match ? match[1].trim() : line.trim();
+    // PSAPPSRV prefix (tab separator)
+    const psMatch = line.match(/^PSAPPSRV\.\d+\s+\[.*?\]\s+\S+\s+\S+\s+\S+\s+\(\d+\)\s+\t\s*(.*)/);
+    if (psMatch) return psMatch[1].trim();
+
+    // Legacy: processNo-lineNo  HH.MM.SS  elapsed  <rest>
+    const legacyMatch = line.match(/^\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+    if (legacyMatch) return legacyMatch[1].trim();
+
+    return line.trim();
   }
 
   /**
-   * Push a new event onto the stack and record a 'start' entry in eventFlow.
-   *
-   * @param {number}      nestLevel   Nest= value from trace
-   * @param {string|null} functionName  caller function, or null for event-triggered
-   * @param {string}      program     "Record.Field.EventName" string
+   * Push a new event onto the stack and record a 'start' entry.
    */
-  _handleStart(nestLevel, functionName, program) {
+  _handleStart(nestLevel, functionName, program, format) {
     this.eventCount++;
 
     const parts = program.split('.');
@@ -165,21 +246,10 @@ class EventParser {
     const record    = parts.length >= 3 ? parts[0] : '';
     const field     = parts.length >= 3 ? parts[1] : '';
 
-    // depth === nestLevel so the EventFlowPanel indentation works correctly
-    const entry = {
-      nestLevel,
-      program,
-      eventName,
-      record,
-      field,
-      functionName: functionName || null
-    };
-
+    const entry = { nestLevel, program, eventName, record, field, functionName: functionName || null };
     this.eventStack.push(entry);
-
-    // Snapshot the captured lines from the previous open scope into the parent;
-    // start fresh for this new event
     this.currentEventLines = [];
+    this._lastCallIdx = -1;
 
     this.eventFlow.push({
       type: 'start',
@@ -188,14 +258,15 @@ class EventParser {
       record,
       field,
       functionName: functionName || null,
-      depth: nestLevel,         // used by EventFlowPanel for indentation
+      depth: nestLevel,
       nestLevel,
-      codeLines: [],            // populated when event closes
+      format,
+      codeLines: [],
       sqlLines: [],
-      fieldOps: []
+      fieldOps: [],
+      appClassCalls: []
     });
 
-    // Build flame chart node
     const flameNode = {
       label: program,
       eventName,
@@ -209,37 +280,35 @@ class EventParser {
   }
 
   /**
-   * Pop the matching open event, record its duration, and wire it into the
-   * flame chart hierarchy.
-   *
-   * @param {number} nestLevel
-   * @param {string} program
-   * @param {number} dur  seconds from Dur= on the <<< end line
+   * Pop the matching open event, record its duration.
    */
   _handleEnd(nestLevel, program, dur) {
     const durMs = Math.round(dur * 1000 * 100) / 100;
 
-    // Attach captured content lines to the matching 'start' entry in eventFlow
+    // Attach captured content to the matching 'start' entry in eventFlow
     const startIdx = this._findStartIndex(program, nestLevel);
     if (startIdx !== -1) {
       const codeLines = [];
       const sqlLines  = [];
       const fieldOps  = [];
+      const appClassCalls = [];
 
       for (const ln of this.currentEventLines) {
         if (ln.type === 'code')  codeLines.push({ lineNum: ln.lineNum, text: ln.text });
         else if (ln.type === 'sql')   sqlLines.push({ rc: ln.rc, dur: ln.dur, text: ln.text });
         else if (ln.type === 'field') fieldOps.push({ action: ln.action, field: ln.field, value: ln.value });
+        else if (ln.type === 'call')  appClassCalls.push({ callType: ln.callType, methodName: ln.methodName, program: ln.program, params: ln.params });
       }
 
       this.eventFlow[startIdx].codeLines = codeLines;
       this.eventFlow[startIdx].sqlLines  = sqlLines;
       this.eventFlow[startIdx].fieldOps  = fieldOps;
+      this.eventFlow[startIdx].appClassCalls = appClassCalls;
     }
 
     this.currentEventLines = [];
+    this._lastCallIdx = -1;
 
-    // Remove from open stack
     const stackIdx = this.eventStack.findLastIndex(
       e => e.nestLevel === nestLevel && e.program === program
     );
@@ -270,7 +339,6 @@ class EventParser {
     node.duration = durMs;
     this.flameStack.splice(idx, 1);
 
-    // Parent is the nearest open node with a lower nestLevel
     const parentIdx = this.flameStack.findLastIndex(f => f.nestLevel < nestLevel);
     if (parentIdx !== -1) {
       this.flameStack[parentIdx].node.children.push(node);
@@ -281,7 +349,6 @@ class EventParser {
 
   /**
    * Find the most recent 'start' eventFlow entry matching program + nestLevel.
-   * Searches backwards so nested calls resolve correctly.
    */
   _findStartIndex(program, nestLevel) {
     for (let i = this.eventFlow.length - 1; i >= 0; i--) {
@@ -295,7 +362,6 @@ class EventParser {
 
   /**
    * Map PeopleCode event names to colour tokens used by the flame chart.
-   * Matches the spec colour assignments exactly.
    */
   _eventColor(eventName) {
     const n = eventName.toLowerCase();

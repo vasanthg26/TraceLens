@@ -58,6 +58,9 @@ function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
 
+  // Component context metadata (from PSIWCEVENTS detection)
+  const [componentMetadata, setComponentMetadata] = useState(null);
+
   // Error state
   const [appError, setAppError] = useState(null);
 
@@ -122,6 +125,10 @@ function App() {
 
       case 'partial':
         setResults(prev => ({ ...prev, [msg.section]: msg.data }));
+        break;
+
+      case 'metadata':
+        setComponentMetadata(msg.data);
         break;
 
       case 'llm-token':
@@ -201,6 +208,7 @@ function App() {
     setLlmAnalysis(null);
     setLlmError(null);
     setResults({ summary: null, sql: null, loops: null, events: null, errors: null, variables: null });
+    setComponentMetadata(null);
     setChatMessages([]);
     setProgress({ percent: 0, linesProcessed: 0, phase: 'Uploading file...' });
     setView('progress');
@@ -281,6 +289,7 @@ function App() {
     setView('upload');
     setProgress({ percent: 0, linesProcessed: 0, phase: '' });
     setResults({ summary: null, sql: null, loops: null, events: null, errors: null, variables: null });
+    setComponentMetadata(null);
     setLlmTokens('');
     setLlmAnalysis(null);
     setLlmError(null);
@@ -348,6 +357,7 @@ function App() {
               llmTokens={llmTokens}
               llmError={llmError}
               onReset={handleReset}
+              componentMetadata={componentMetadata}
             />
             <ChatPanel
               messages={chatMessages}

@@ -14,6 +14,7 @@ import ErrorPanel from './ErrorPanel';
 import ValueIssues from './ValueIssues';
 import VariableTracer from './VariableTracer';
 import { COLOR_MAP, EVENT_LEGEND, eventToLegendKey } from './eventConstants';
+import SqlByTable from './SqlByTable/SqlByTable';
 
 /**
  * Simple markdown-to-JSX renderer for LLM output.
@@ -287,7 +288,7 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   );
 }
 
-function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSaveToHistory, historySaved }) {
+function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSaveToHistory, historySaved, componentMetadata }) {
   const [activeTab, setActiveTab] = useState('performance');
   const [activeSubTab, setActiveSubTab] = useState('flame');
   const [aiExpanded, setAiExpanded] = useState(false);
@@ -315,6 +316,7 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSav
   const subTabs = [
     { id: 'flame', label: 'Flame Chart' },
     { id: 'sql', label: 'SQL Groups' },
+    { id: 'sqltable', label: 'SQL by Table' },
     { id: 'loops', label: 'Loop Detector' },
     { id: 'fixes', label: 'Fix Previews' }
   ];
@@ -371,6 +373,22 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSav
         </div>
       )}
 
+      {/* ── Component Context Metadata ── */}
+      {componentMetadata && (componentMetadata.componentName || componentMetadata.menuName || componentMetadata.portalName) && (
+        <div className="component-context-bar">
+          <span className="context-label">Component Context:</span>
+          {componentMetadata.portalName && (
+            <span className="context-chip portal" title="Portal">{componentMetadata.portalName}</span>
+          )}
+          {componentMetadata.menuName && (
+            <span className="context-chip menu" title="Menu">{componentMetadata.menuName}</span>
+          )}
+          {componentMetadata.componentName && (
+            <span className="context-chip component" title="Component">{componentMetadata.componentName}</span>
+          )}
+        </div>
+      )}
+
       {/* ── Main Tabs ── */}
       <div className="tabs-bar">
         {tabs.map(tab => (
@@ -415,6 +433,9 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSav
         )}
         {activeTab === 'performance' && activeSubTab === 'sql' && (
           <SqlGroups data={sql?.sqlGroups || []} stats={sql?.sqlStats} />
+        )}
+        {activeTab === 'performance' && activeSubTab === 'sqltable' && (
+          <SqlByTable data={sql?.sqlByTable || []} />
         )}
         {activeTab === 'performance' && activeSubTab === 'loops' && (
           <LoopDetector data={loops?.loopPatterns || []} codeLoops={loops?.codeLoops || []} totalWasted={loops?.totalWastedTime || 0} />
