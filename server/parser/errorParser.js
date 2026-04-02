@@ -187,10 +187,10 @@ class ErrorParser {
     }
 
     if (isError || isSqlError) {
-      const severity = isSqlError ? 'warning' : this.classifySeverity(trimmed);
+      const severity = isSqlError ? 'warning' : this.classifySeverity(content);
       const title = isSqlError
         ? `SQL returned RC=${rcMatch[1]}`
-        : this.extractTitle(trimmed);
+        : this.extractTitle(content);
 
       const errorEntry = {
         severity,
