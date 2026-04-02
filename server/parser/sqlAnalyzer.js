@@ -66,6 +66,22 @@ class SqlAnalyzer {
   }
 
   /**
+   * Classify a SQL table as 'portal' (PeopleTools infrastructure) or 'app' (business logic).
+   * Portal tables: PS catalog tables (PSRECDEFN, PSOPTIONS, etc.), PS_PT* prefixed tables.
+   */
+  _classifySqlTable(table) {
+    if (!table || table === 'UNKNOWN') return 'app';
+    const t = table.toUpperCase();
+    // PeopleTools catalog tables: start with PS but no underscore after (e.g. PSRECDEFN, PSOPTIONS)
+    if (/^PS[A-Z]/.test(t) && !t.startsWith('PS_')) return 'portal';
+    // PS_PT* tables
+    if (t.startsWith('PS_PT')) return 'portal';
+    // Portal-related prefixes
+    if (t.startsWith('PT_') || t.startsWith('PSPT')) return 'portal';
+    return 'app';
+  }
+
+  /**
    * Extract primary table name from a SQL statement (first table in FROM clause).
    */
   _extractPrimaryTable(sql) {
@@ -284,6 +300,7 @@ class SqlAnalyzer {
         preview: normalized.substring(0, 120),
         table,
         sqlType,
+        category: this._classifySqlTable(table),
         count: 1,
         totalTime: elapsed,
         avgTime: elapsed,

@@ -12,6 +12,7 @@ function SqlGroups({ data, stats }) {
   const [sortDir, setSortDir] = useState('desc');
   const [expandedRow, setExpandedRow] = useState(null);
   const [selectedProcess, setSelectedProcess] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('app');
 
   const allProcesses = stats?.allProcesses || [];
   const showProcessFilter = allProcesses.length > 1;
@@ -25,10 +26,17 @@ function SqlGroups({ data, stats }) {
     }
   };
 
+  const appCount = useMemo(() => data?.filter(g => g.category === 'app').length || 0, [data]);
+  const portalCount = useMemo(() => data?.filter(g => g.category === 'portal').length || 0, [data]);
+
   const filtered = useMemo(() => {
-    if (!showProcessFilter || selectedProcess === 'all') return data;
-    return data.filter(g => g.processes?.includes(selectedProcess));
-  }, [data, selectedProcess, showProcessFilter]);
+    let result = data;
+    if (categoryFilter !== 'all') {
+      result = result.filter(g => g.category === categoryFilter);
+    }
+    if (!showProcessFilter || selectedProcess === 'all') return result;
+    return result.filter(g => g.processes?.includes(selectedProcess));
+  }, [data, selectedProcess, showProcessFilter, categoryFilter]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -57,6 +65,17 @@ function SqlGroups({ data, stats }) {
           {stats.nPlusOneCount > 0 && (
             <span className="badge red">N+1: {stats.nPlusOneCount}</span>
           )}
+          <div className="category-filter">
+            {['app', 'all', 'portal'].map(cat => (
+              <button
+                key={cat}
+                className={`category-btn ${categoryFilter === cat ? 'active' : ''}`}
+                onClick={() => { setCategoryFilter(cat); setExpandedRow(null); }}
+              >
+                {cat === 'all' ? `All (${appCount + portalCount})` : cat === 'app' ? `App (${appCount})` : `Portal (${portalCount})`}
+              </button>
+            ))}
+          </div>
           {showProcessFilter && (
             <select
               className="process-filter-select"

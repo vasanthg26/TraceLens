@@ -10,6 +10,36 @@
   gap: 10px;
 }
 
+.sql-summary-row .category-filter {
+  display: flex;
+  gap: 4px;
+  padding: 0;
+}
+
+.sql-summary-row .category-btn {
+  padding: 1px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sql-summary-row .category-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.sql-summary-row .category-btn.active {
+  background: rgba(0, 255, 242, 0.08);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
 .sql-summary-row {
   display: flex;
   gap: 14px;

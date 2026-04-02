@@ -310,7 +310,7 @@ function buildLlmPrompt(results) {
   prompt += `**Loops:** ${loopData.loopCount || 0} loop patterns detected, ${loopData.totalWastedTime || 0}s estimated wasted time\n`;
   prompt += `**Events:** ${eventData.eventCount || 0} PeopleCode events\n`;
   prompt += `**Errors:** ${errStats.total || 0} total (${errStats.critical || 0} critical, ${errStats.warnings || 0} warnings)\n`;
-  prompt += `**Value Issues:** ${errStats.valueIssueCount || 0}\n\n`;
+  prompt += `**Value Issues:** ${errStats.valueIssueCount || 0} (${errStats.nullValueCount || 0} null/null-bind propagation)\n\n`;
 
   // Top 5 slow SQL
   if (sqlStats.topSlow?.length > 0) {

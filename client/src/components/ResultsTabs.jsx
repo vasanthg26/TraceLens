@@ -126,6 +126,7 @@ function inlineMd(text) {
  */
 function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   const [expandedEvent, setExpandedEvent] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const allKeys = Object.keys(EVENT_LEGEND);
   const isAllActive = !activeFilters || activeFilters.size === allKeys.length;
@@ -152,17 +153,34 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
 
   const startEvents = useMemo(() => {
     if (!events?.eventFlow) return [];
-    const starts = events.eventFlow.filter(e => e.type === 'start');
+    let starts = events.eventFlow.filter(e => e.type === 'start');
+    if (categoryFilter !== 'all') {
+      starts = starts.filter(e => e.category === categoryFilter);
+    }
     if (!activeFilters) return starts;
     return starts.filter(e => activeFilters.has(eventToLegendKey(e.eventName)));
-  }, [events, activeFilters]);
+  }, [events, activeFilters, categoryFilter]);
 
   if (!events?.eventFlow?.length) {
     return <div className="empty-state">No PeopleCode events detected in this trace.</div>;
   }
 
+  const appCount = useMemo(() => events?.eventFlow?.filter(e => e.type === 'start' && e.category === 'app').length || 0, [events]);
+  const portalCount = useMemo(() => events?.eventFlow?.filter(e => e.type === 'start' && e.category === 'portal').length || 0, [events]);
+
   return (
     <div className="event-flow-panel">
+      <div className="category-filter">
+        {['all', 'app', 'portal'].map(cat => (
+          <button
+            key={cat}
+            className={`category-btn ${categoryFilter === cat ? 'active' : ''}`}
+            onClick={() => { setCategoryFilter(cat); setExpandedEvent(null); }}
+          >
+            {cat === 'all' ? `All (${appCount + portalCount})` : cat === 'app' ? `App (${appCount})` : `Portal (${portalCount})`}
+          </button>
+        ))}
+      </div>
       <div className="flame-legend">
         {Object.entries(EVENT_LEGEND).map(([label, color]) => {
           const isActive = !activeFilters || activeFilters.has(label);

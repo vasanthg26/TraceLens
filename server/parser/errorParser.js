@@ -26,6 +26,10 @@ class ErrorParser {
     this.codeBuffer = [];     // recent PeopleCode lines
     this.sqlBuffer = [];      // recent SQL statements
     this.rawContextBuffer = []; // raw lines for fallback
+
+    // Null propagation tracking: fields fetched as null → may be used in SQL binds
+    this._nullFields = new Set();    // fields seen with "Contains Null Value"
+    this._lastCursorHadNullBind = false;
   }
 
   /**
@@ -63,6 +67,10 @@ class ErrorParser {
     const exceptionMatch = line.match(/catch\s+Exception\s+(.*)/i);
     if (exceptionMatch) return `Exception handler: ${exceptionMatch[1].trim().substring(0, 100)}`;
 
+    // Error MsgGet(msgSetNbr, msgNbr, defaultText, ...) — extract set/number and default text
+    const msgGetMatch = line.match(/Error\s+MsgGet\(\s*(\d+)\s*,\s*(\d+)\s*,\s*"([^"]+)"/i);
+    if (msgGetMatch) return `MsgGet(${msgGetMatch[1]},${msgGetMatch[2]}): ${msgGetMatch[3].trim().substring(0, 100)}`;
+
     const errorMatch = line.match(/Error[:\s]+(.*)/i);
     if (errorMatch) return errorMatch[1].trim().substring(0, 120);
 
@@ -85,6 +93,7 @@ class ErrorParser {
     if (beginMatch) {
       this.currentProgram = `${beginMatch[1]}.${beginMatch[2]}`;
       this.currentEvent = beginMatch[3];
+      this._nullFields.clear(); // reset null tracking per event
     }
 
     // Track PeopleCode lines (clean, with line numbers)
@@ -252,7 +261,23 @@ class ErrorParser {
       });
     }
 
-    // Detect empty/null values from Fetch Field patterns
+    // Fetch Field: RECORD.FIELD Contains Null Value
+    const nullFetchMatch = content.match(/Fetch Field:\s+(\S+)\s+Contains Null Value/i);
+    if (nullFetchMatch) {
+      const field = nullFetchMatch[1];
+      this._nullFields.add(field.split('.').pop()); // track just the field name
+      this.valueIssues.push({
+        type: 'NULL',
+        variable: field,
+        location: `${this.currentProgram} > ${this.currentEvent}`,
+        description: `Field "${field}" contains null value — if used in SQL bind or conditional, this may cause incorrect results or errors`,
+        fix: `Check if "${field.split('.').pop()}" is populated before use. The rowset may have been filled with no matching rows, leaving default (null) values.`,
+        traceLineNumber: this.lineNumber,
+        codeContext: [...this.codeBuffer]
+      });
+    }
+
+    // Detect empty/null values from Fetch Field: X Value= (empty at end)
     const fetchMatch = content.match(/Fetch Field:\s+(\S+)\s+Value=\s*$/);
     if (fetchMatch) {
       this.valueIssues.push({
@@ -264,6 +289,26 @@ class ErrorParser {
         traceLineNumber: this.lineNumber,
         codeContext: [...this.codeBuffer]
       });
+    }
+
+    // Null propagation: Bind with empty/whitespace-only value when we've seen null fields recently
+    // e.g. Bind-2 type=2 length=1 value= (single space = null passed to SQL)
+    const bindNullMatch = line.match(/Bind-(\d+)\s+type=\S+\s+length=(\d+)\s+value=(.*)/i);
+    if (bindNullMatch && this._nullFields.size > 0) {
+      const bindVal = bindNullMatch[3];
+      const bindLen = parseInt(bindNullMatch[2], 10);
+      if (bindLen <= 1 && (!bindVal || !bindVal.trim())) {
+        this.valueIssues.push({
+          type: 'NULL_BIND',
+          variable: `Bind-${bindNullMatch[1]}`,
+          location: `${this.currentProgram} > ${this.currentEvent}`,
+          description: `Null/empty value passed as Bind-${bindNullMatch[1]} to SQL — likely from a field that "Contains Null Value". SQL results may be incorrect or trigger unexpected error conditions.`,
+          fix: `Verify that all field values used as SQL bind variables are populated before the SQL executes. Check preceding "Fetch Field ... Contains Null Value" lines.`,
+          traceLineNumber: this.lineNumber,
+          codeContext: [...this.codeBuffer],
+          sqlContext: [...this.sqlBuffer]
+        });
+      }
     }
 
     // Numeric overflow
@@ -295,7 +340,8 @@ class ErrorParser {
         critical: this.errors.filter(e => e.severity === 'critical').length,
         warnings: this.errors.filter(e => e.severity === 'warning').length,
         info: this.errors.filter(e => e.severity === 'info').length,
-        valueIssueCount: this.valueIssues.length
+        valueIssueCount: this.valueIssues.length,
+        nullValueCount: this.valueIssues.filter(v => v.type === 'NULL' || v.type === 'NULL_BIND').length
       }
     };
   }

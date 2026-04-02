@@ -240,6 +240,24 @@ class EventParser {
   }
 
   /**
+   * Classify a program as 'portal' (PeopleTools infrastructure) or 'app' (business logic).
+   * Portal code: PT* prefixed records, FUNCLIB_PORTAL, WEBLIB_PT*, system records.
+   */
+  _classifyProgram(program) {
+    const record = program.split('.')[0].toUpperCase();
+    const PORTAL_EXACT = new Set(['PSOPTIONS', 'TRACE_SQL', 'PSVERSION', 'INSTALLATION', 'PSMSGCATDEFN']);
+    if (PORTAL_EXACT.has(record)) return 'portal';
+    if (
+      record.startsWith('PT') ||
+      record.startsWith('FUNCLIB_PT') ||
+      record.startsWith('FUNCLIB_PORTAL') ||
+      record.startsWith('WEBLIB_PT') ||
+      record.startsWith('WEBLIB_PTBR')
+    ) return 'portal';
+    return 'app';
+  }
+
+  /**
    * Push a new event onto the stack and record a 'start' entry.
    */
   _handleStart(nestLevel, functionName, program, format) {
@@ -265,6 +283,7 @@ class EventParser {
       depth: nestLevel,
       nestLevel,
       format,
+      category: this._classifyProgram(program),
       codeLines: [],
       sqlLines: [],
       fieldOps: [],
