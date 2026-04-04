@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node --watch server/index.js",
-    "client": "cd client && npx vite --port 5173",
+    "client": "cd client && npx vite",
     "build": "cd client && npm install --include=dev && npx vite build",
     "start": "node server/index.js"
   },
