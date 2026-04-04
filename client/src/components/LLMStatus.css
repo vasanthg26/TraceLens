@@ -107,3 +107,37 @@
 .source-env {
   color: var(--text-muted);
 }
+
+/* PRO badge next to label */
+.llm-mode-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(163, 113, 247, 0.15);
+  color: #a371f7;
+  border: 1px solid rgba(163, 113, 247, 0.3);
+  letter-spacing: 0.5px;
+}
+
+/* Section headers inside tooltip */
+.llm-tooltip-section {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  padding: 2px 0 4px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+
+.llm-tooltip-hint {
+  margin-top: 6px;
+  font-size: 9px;
+  color: #ffa600;
+  line-height: 1.4;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 166, 0, 0.25);
+  background: rgba(255, 166, 0, 0.05);
+  border-radius: 3px;
+}

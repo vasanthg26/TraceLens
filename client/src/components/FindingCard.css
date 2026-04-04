@@ -1,0 +1,176 @@
+/* FindingCard.css — PS finding card styles */
+
+.finding-card {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+  padding: 16px;
+  margin: 8px 0;
+  position: relative;
+}
+
+.finding-card--critical {
+  border-color: #f85149;
+  border-left: 3px solid #f85149;
+}
+
+.finding-card--warning {
+  border-color: #d29922;
+  border-left: 3px solid #d29922;
+}
+
+.finding-card--info {
+  border-color: #58a6ff;
+  border-left: 3px solid #58a6ff;
+}
+
+.finding-card--ok {
+  border-color: #3fb950;
+  border-left: 3px solid #3fb950;
+}
+
+/* Header */
+.finding-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.finding-card__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.finding-card__title {
+  font-size: 13px;
+  font-weight: bold;
+  flex: 1;
+}
+
+.finding-card--critical .finding-card__title { color: #f85149; }
+.finding-card--warning .finding-card__title  { color: #d29922; }
+.finding-card--info .finding-card__title     { color: #58a6ff; }
+.finding-card--ok .finding-card__title       { color: #3fb950; }
+
+.finding-card__badge {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.finding-card--critical .finding-card__badge { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+.finding-card--warning .finding-card__badge  { background: rgba(210, 153, 34, 0.15); color: #d29922; }
+.finding-card--info .finding-card__badge     { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
+.finding-card--ok .finding-card__badge       { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+
+/* PS Context fields */
+.finding-card__context {
+  margin-bottom: 12px;
+}
+
+.finding-card__context-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.finding-card__context-label {
+  color: #8b949e;
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.finding-card__context-value {
+  color: #e6edf3;
+  word-break: break-all;
+}
+
+/* Evidence / Suggestion */
+.finding-card__evidence,
+.finding-card__suggestion {
+  margin-top: 10px;
+}
+
+.finding-card__label {
+  font-size: 11px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.finding-card__text {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #c9d1d9;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* PeopleCode block */
+.peoplecode-block {
+  background: #161b22;
+  border: 1px solid #21262d;
+  border-left: 3px solid #58a6ff;
+  border-radius: 4px;
+  margin: 8px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.peoplecode-block__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+}
+
+.peoplecode-block__lang {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #58a6ff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.peoplecode-block__copy {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.peoplecode-block__copy:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
+.peoplecode-block__copy.copied {
+  border-color: #3fb950;
+  color: #3fb950;
+}
+
+.peoplecode-block__code {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: #e6edf3;
+  padding: 12px;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+}

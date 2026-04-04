@@ -112,8 +112,27 @@
 /* ── Main content ── */
 .main-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Results layout — full-width, no sidebar */
+.results-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.results-layout--full {
+  flex-direction: column;
+}
+
+.results-layout--full .results-tabs {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Health badges: terminal style ── */

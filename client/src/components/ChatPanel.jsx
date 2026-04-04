@@ -1,11 +1,14 @@
 /**
  * ChatPanel.jsx
- * Purpose: Post-analysis chat with streaming LLM responses and starter chips
- * Author: TraceLens
+ * Purpose: Post-analysis chat with streaming LLM responses, slash commands, and finding cards.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatPanel.css';
+import { FindingCard, PeopleCodeBlock } from './FindingCard';
+import SlashCommandInput from './SlashCommandInput';
+import UpgradeCard from './UpgradeCard';
+import { parseResponse } from '../utils/responseParser';
 
 const STARTER_QUESTIONS = [
   'Which SQL is slowest and how to fix it?',
@@ -14,6 +17,103 @@ const STARTER_QUESTIONS = [
   'Trace the value path of a key variable',
   'What PeopleCode events took the longest?'
 ];
+
+/**
+ * Renders a single assistant message using typed segments from responseParser.
+ * Falls back to markdown rendering for older plain-text messages.
+ */
+function AssistantMessage({ content, streaming, isLast }) {
+  const segments = parseResponse(content);
+
+  // If no structured segments, fall back to simple markdown
+  if (!segments.length || (segments.length === 1 && segments[0].type === 'narrative')) {
+    return (
+      <>
+        <ChatMarkdown text={content} />
+        {streaming && isLast && <span className="cursor">|</span>}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) => {
+        if (seg.type === 'finding') {
+          return <FindingCard key={i} data={seg.data} severity={seg.severity} />;
+        }
+        if (seg.type === 'peoplecode') {
+          return <PeopleCodeBlock key={i} code={seg.code} />;
+        }
+        // narrative
+        return <ChatMarkdown key={i} text={seg.text} />;
+      })}
+      {streaming && isLast && <span className="cursor">|</span>}
+    </>
+  );
+}
+
+/**
+ * Auto-analysis banner shown at the top of the Ask tab after upload.
+ */
+function AutoAnalysisBanner({ status, content, upgradePrompt }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (!status) return null;
+
+  if (status === 'loading') {
+    return (
+      <div className="auto-analysis-banner auto-analysis-banner--loading">
+        <div className="auto-analysis-banner__header">
+          <span className="auto-analysis-banner__icon">⟳</span>
+          <span className="auto-analysis-banner__title">Analysing trace…</span>
+          <div className="auto-analysis-banner__dots">
+            <span /><span /><span />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'done' && content) {
+    const segments = parseResponse(content);
+    return (
+      <div className={`auto-analysis-banner auto-analysis-banner--done ${collapsed ? 'collapsed' : ''}`}>
+        <div className="auto-analysis-banner__header" onClick={() => setCollapsed(c => !c)}>
+          <span className="auto-analysis-banner__icon">✦</span>
+          <span className="auto-analysis-banner__title">Auto-Analysis</span>
+          {upgradePrompt && (
+            <span className="auto-analysis-banner__upgrade" title="Add Anthropic key for deeper analysis">
+              FREE
+            </span>
+          )}
+          <button className="auto-analysis-banner__toggle">
+            {collapsed ? '▾' : '▴'}
+          </button>
+        </div>
+        {!collapsed && (
+          <div className="auto-analysis-banner__body">
+            {segments.map((seg, i) => {
+              if (seg.type === 'finding') {
+                return <FindingCard key={i} data={seg.data} severity={seg.severity} />;
+              }
+              if (seg.type === 'peoplecode') {
+                return <PeopleCodeBlock key={i} code={seg.code} />;
+              }
+              return <ChatMarkdown key={i} text={seg.text} />;
+            })}
+            {upgradePrompt && (
+              <div className="auto-analysis-banner__upgrade-msg">
+                Add your Anthropic API key in settings to get deeper analysis with Claude Sonnet.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
 
 /**
  * Simple inline markdown for chat messages.
@@ -64,33 +164,37 @@ function chatInline(t) {
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');
 }
 
-function ChatPanel({ messages, onSend, streaming }) {
+/**
+ * @param {object}  props
+ * @param {Array}   props.messages          - chat history
+ * @param {function} props.onSend           - (text: string) => void
+ * @param {boolean} props.streaming         - streaming in progress
+ * @param {string}  props.autoAnalysisStatus - null | 'loading' | 'done'
+ * @param {string}  props.autoAnalysisContent - text content when done
+ * @param {boolean} props.autoAnalysisUpgrade - true if free-tier analysis
+ * @param {boolean} props.hasAnthropicKey   - from localStorage
+ */
+function ChatPanel({ messages, onSend, streaming, autoAnalysisStatus, autoAnalysisContent, autoAnalysisUpgrade, hasAnthropicKey, onOpenSettings }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, autoAnalysisStatus]);
 
-  const handleSend = () => {
-    const trimmed = input.trim();
+  const handleSend = (text) => {
+    const trimmed = (text || input).trim();
     if (!trimmed || streaming) return;
     onSend(trimmed);
     setInput('');
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   };
 
   const handleChipClick = (question) => {
     if (streaming) return;
     onSend(question);
   };
+
+  const showStarters = messages.length === 0 && !autoAnalysisStatus;
 
   return (
     <div className="chat-panel">
@@ -102,7 +206,13 @@ function ChatPanel({ messages, onSend, streaming }) {
       </div>
 
       <div className="chat-messages">
-        {messages.length === 0 && (
+        <AutoAnalysisBanner
+          status={autoAnalysisStatus}
+          content={autoAnalysisContent}
+          upgradePrompt={autoAnalysisUpgrade}
+        />
+
+        {showStarters && (
           <div className="chat-starter">
             <p>Ask follow-up questions about the analysis:</p>
             <div className="starter-chips">
@@ -120,42 +230,43 @@ function ChatPanel({ messages, onSend, streaming }) {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <div key={i} className={`chat-bubble ${msg.role}`}>
-            <div className="chat-bubble-content">
-              {msg.role === 'assistant' ? (
-                <>
-                  <ChatMarkdown text={msg.content} />
-                  {streaming && i === messages.length - 1 && (
-                    <span className="cursor">|</span>
-                  )}
-                </>
-              ) : (
-                msg.content
-              )}
+        {messages.map((msg, i) => {
+          if (msg.role === 'upgrade') {
+            return <UpgradeCard key={i} onOpenSettings={onOpenSettings} />;
+          }
+          return (
+            <div key={i} className={`chat-bubble ${msg.role}`}>
+              <div className="chat-bubble-content">
+                {msg.role === 'assistant' ? (
+                  <AssistantMessage
+                    content={msg.content}
+                    streaming={streaming}
+                    isLast={i === messages.length - 1}
+                  />
+                ) : (
+                  msg.content
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
       <div className="chat-input-bar">
-        <input
-          ref={inputRef}
-          type="text"
-          className="chat-input"
-          placeholder="Ask a question about the trace..."
+        <SlashCommandInput
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onChange={setInput}
+          onSubmit={handleSend}
           disabled={streaming}
+          hasAnthropicKey={hasAnthropicKey}
         />
         <button
           className="chat-send-btn"
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!input.trim() || streaming}
         >
-          {streaming ? '...' : 'Send'}
+          {streaming ? '…' : 'Send'}
         </button>
       </div>
     </div>

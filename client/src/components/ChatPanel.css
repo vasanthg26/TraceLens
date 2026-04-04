@@ -105,9 +105,14 @@
 /* ── Input Bar ── */
 .chat-input-bar {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px 12px;
   border-top: 1px solid var(--border-color);
+}
+
+.chat-input-bar .chat-send-btn {
+  align-self: flex-end;
 }
 
 .chat-input {
@@ -204,4 +209,110 @@
   padding: 0 4px;
   border: 1px solid rgba(0, 255, 136, 0.15);
   color: var(--accent-orange);
+}
+
+/* ── Auto-analysis banner ── */
+.auto-analysis-banner {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  margin: 8px 0 12px;
+  overflow: hidden;
+}
+
+.auto-analysis-banner--loading {
+  border-color: #30363d;
+}
+
+.auto-analysis-banner--done {
+  border-color: #a371f7;
+}
+
+.auto-analysis-banner__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(163, 113, 247, 0.06);
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-analysis-banner--loading .auto-analysis-banner__header {
+  cursor: default;
+  background: rgba(48, 54, 61, 0.4);
+}
+
+.auto-analysis-banner__icon {
+  font-size: 13px;
+  color: #a371f7;
+}
+
+.auto-analysis-banner__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a371f7;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.auto-analysis-banner__upgrade {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(63, 185, 80, 0.12);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  letter-spacing: 0.5px;
+}
+
+.auto-analysis-banner__toggle {
+  background: transparent;
+  border: none;
+  color: #8b949e;
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.auto-analysis-banner__body {
+  padding: 12px;
+  background: #0d1117;
+  font-size: 12px;
+  color: #c9d1d9;
+}
+
+.auto-analysis-banner__upgrade-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 166, 0, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 166, 0, 0.06);
+  font-size: 11px;
+  color: #ffa600;
+  line-height: 1.5;
+}
+
+/* Loading dots animation */
+.auto-analysis-banner__dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.auto-analysis-banner__dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #8b949e;
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+.auto-analysis-banner__dots span:nth-child(2) { animation-delay: 0.2s; }
+.auto-analysis-banner__dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40%           { opacity: 1;   transform: scale(1); }
 }
