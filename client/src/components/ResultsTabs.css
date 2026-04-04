@@ -42,23 +42,40 @@
   flex-shrink: 0;
 }
 
-/* ── AI Tab: purple accent ── */
-.tab-btn.ai-tab {
+/* ── AI / Ask Tab: purple accent ── */
+.tab-btn.ai-tab,
+.tab-btn.ask-tab {
   margin-left: auto;
 }
 
-.tab-btn.ai-tab.active {
+.tab-btn.ai-tab.active,
+.tab-btn.ask-tab.active {
   color: var(--accent-purple);
   border-bottom-color: var(--accent-purple);
   background: rgba(198, 120, 255, 0.03);
 }
 
-.tab-btn.ai-tab:hover:not(.active) {
+.tab-btn.ai-tab:hover:not(.active),
+.tab-btn.ask-tab:hover:not(.active) {
   color: var(--accent-purple);
 }
 
-.tab-btn.ai-tab svg {
+.tab-btn.ai-tab svg,
+.tab-btn.ask-tab svg {
   flex-shrink: 0;
+}
+
+/* Ask tab content fills height for ChatPanel */
+.tab-content--ask {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.tab-content--ask .chat-panel {
+  width: 100%;
+  height: 100%;
+  border-left: none;
+  border-top: none;
 }
 
 .ai-streaming-dot {

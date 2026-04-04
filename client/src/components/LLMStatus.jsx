@@ -1,57 +1,44 @@
 /**
  * LLMStatus.jsx
- * Purpose: Navbar indicator showing LLM provider status with polling
- * Author: TraceLens
+ * Purpose: Navbar indicator — shows Groq (always on) + Anthropic status based on localStorage key.
+ * No polling of external APIs; Anthropic status is inferred from whether the user has saved a key.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import './LLMStatus.css';
 
 /**
- * uiConfig: { apiUrl, apiKey } from SettingsPanel localStorage — when present, test those
- *           credentials instead of the server's .env config.
+ * @param {boolean} props.hasAnthropicKey - true if user has saved an Anthropic key
  */
-function LLMStatus({ uiConfig }) {
-  const [status, setStatus] = useState({
-    provider: '',
-    providerName: '',
-    model: '',
-    status: 'checking',
-    latencyMs: 0
-  });
+function LLMStatus({ hasAnthropicKey }) {
+  const [groqStatus, setGroqStatus] = useState('checking'); // 'online' | 'offline' | 'checking'
   const [showTooltip, setShowTooltip] = useState(false);
+  const [groqModel, setGroqModel] = useState('');
 
-  const checkStatus = useCallback(async () => {
+  const checkGroq = useCallback(async () => {
     try {
-      let res;
-      if (uiConfig?.apiUrl && uiConfig?.apiKey) {
-        res = await fetch('/api/llm/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiUrl: uiConfig.apiUrl, apiKey: uiConfig.apiKey })
-        });
-      } else {
-        res = await fetch('/api/llm/status');
-      }
+      const res = await fetch('/api/llm/status');
       if (res.ok) {
         const data = await res.json();
-        setStatus(data);
+        setGroqStatus(data.status === 'online' ? 'online' : 'offline');
+        setGroqModel(data.model || '');
       } else {
-        setStatus(prev => ({ ...prev, status: 'offline' }));
+        setGroqStatus('offline');
       }
     } catch {
-      setStatus(prev => ({ ...prev, status: 'offline' }));
+      setGroqStatus('offline');
     }
-  }, [uiConfig]);
+  }, []);
 
   useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 30000);
+    checkGroq();
+    const interval = setInterval(checkGroq, 60000);
     return () => clearInterval(interval);
-  }, [checkStatus]);
+  }, [checkGroq]);
 
-  const dotClass = status.status === 'online' ? 'online'
-    : status.status === 'offline' ? 'offline'
+  const mode = hasAnthropicKey ? 'advanced' : 'basic';
+  const dotClass = groqStatus === 'online' ? 'online'
+    : groqStatus === 'offline' ? 'offline'
     : 'checking';
 
   return (
@@ -62,39 +49,53 @@ function LLMStatus({ uiConfig }) {
     >
       <div className={`llm-dot ${dotClass}`} />
       <span className="llm-label">
-        {status.providerName || status.provider || 'LLM'}
+        {hasAnthropicKey ? 'Anthropic' : 'Groq'}
       </span>
+      {hasAnthropicKey && (
+        <span className="llm-mode-badge">PRO</span>
+      )}
 
       {showTooltip && (
         <div className="llm-tooltip">
+          <div className="llm-tooltip-section">FREE TIER</div>
           <div className="llm-tooltip-row">
             <span>Provider</span>
-            <span>{status.providerName || status.provider}</span>
+            <span>Groq</span>
           </div>
-          <div className="llm-tooltip-row">
-            <span>Model</span>
-            <span>{status.model}</span>
-          </div>
-          <div className="llm-tooltip-row">
-            <span>Status</span>
-            <span className={`status-text ${dotClass}`}>
-              {status.status}
-            </span>
-          </div>
-          <div className="llm-tooltip-row">
-            <span>Source</span>
-            <span className={uiConfig?.apiUrl ? 'source-ui' : 'source-env'}>
-              {uiConfig?.apiUrl ? 'UI' : 'ENV'}
-            </span>
-          </div>
-          {status.latencyMs > 0 && (
+          {groqModel && (
             <div className="llm-tooltip-row">
-              <span>Latency</span>
-              <span>{status.latencyMs}ms</span>
+              <span>Model</span>
+              <span>{groqModel}</span>
             </div>
           )}
-          {status.error && (
-            <div className="llm-tooltip-error">{status.error}</div>
+          <div className="llm-tooltip-row">
+            <span>Status</span>
+            <span className={`status-text ${dotClass}`}>{groqStatus}</span>
+          </div>
+
+          <div className="llm-tooltip-section" style={{ marginTop: 8 }}>ANTHROPIC</div>
+          <div className="llm-tooltip-row">
+            <span>Key</span>
+            <span className={hasAnthropicKey ? 'status-text online' : 'status-text offline'}>
+              {hasAnthropicKey ? 'connected' : 'not set'}
+            </span>
+          </div>
+          {hasAnthropicKey && (
+            <>
+              <div className="llm-tooltip-row">
+                <span>Haiku</span>
+                <span className="status-text online">available</span>
+              </div>
+              <div className="llm-tooltip-row">
+                <span>Sonnet</span>
+                <span className="status-text online">available</span>
+              </div>
+            </>
+          )}
+          {!hasAnthropicKey && (
+            <div className="llm-tooltip-hint">
+              Add key in settings for deeper analysis
+            </div>
           )}
         </div>
       )}

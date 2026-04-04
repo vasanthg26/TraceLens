@@ -1,0 +1,101 @@
+/**
+ * UpgradeCard.css
+ * Purpose: Inline upgrade prompt card for users without Anthropic key
+ */
+
+.upgrade-card {
+  border: 1px solid rgba(163, 113, 247, 0.4);
+  background: rgba(163, 113, 247, 0.05);
+  padding: 16px 18px;
+  margin: 8px 0;
+  font-family: var(--font-mono);
+}
+
+.upgrade-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.upgrade-card__icon {
+  font-size: 15px;
+}
+
+.upgrade-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #a371f7;
+  letter-spacing: 0.5px;
+}
+
+.upgrade-card__subtitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+
+.upgrade-card__bullets {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.upgrade-card__bullets li {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-left: 14px;
+  position: relative;
+}
+
+.upgrade-card__bullets li::before {
+  content: '•';
+  position: absolute;
+  left: 2px;
+  color: #a371f7;
+}
+
+.upgrade-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.upgrade-card__btn {
+  padding: 5px 14px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.upgrade-card__btn--primary {
+  background: rgba(163, 113, 247, 0.15);
+  border: 1px solid #a371f7;
+  color: #a371f7;
+}
+
+.upgrade-card__btn--primary:hover {
+  background: rgba(163, 113, 247, 0.28);
+}
+
+.upgrade-card__btn--secondary {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.upgrade-card__btn--secondary:hover {
+  border-color: #a371f7;
+  color: #a371f7;
+}

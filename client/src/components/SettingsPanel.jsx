@@ -1,110 +1,96 @@
 /**
  * SettingsPanel.jsx
- * Purpose: UI panel for configuring LLM provider — overrides .env when set, stored in localStorage
- * Author: TraceLens
+ * Purpose: Anthropic API key configuration — stored in localStorage, sent per-request.
+ * The key never reaches the server permanently; it is forwarded to Anthropic per call.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import './SettingsPanel.css';
 
-export const STORAGE_KEY = 'tracelens_llm_settings';
+export const ANTHROPIC_KEY_STORAGE = 'anthropic_api_key';
 
-const PROVIDER_MAP = [
-  { match: 'groq.com',         name: 'Groq' },
-  { match: 'openai.com',       name: 'OpenAI' },
-  { match: 'openrouter.ai',    name: 'OpenRouter' },
-  { match: 'localhost:11434',  name: 'Ollama' },
-  { match: 'localhost:1234',   name: 'LM Studio' },
-];
-
-export function detectProviderName(url) {
-  if (!url) return null;
-  const found = PROVIDER_MAP.find(p => url.includes(p.match));
-  return found ? found.name : 'Custom';
-}
-
-function SettingsPanel({ onSettingsChange }) {
-  const [open, setOpen] = useState(false);
-  const [apiUrl, setApiUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+/**
+ * isOpen / onIsOpenChange allow App.jsx to open the panel programmatically
+ * (e.g. from the UpgradeCard "Add Key in Settings" button).
+ * When not provided the component manages its own open state.
+ */
+function SettingsPanel({ onSettingsChange, isOpen, onIsOpenChange }) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const open    = isOpen !== undefined ? isOpen : localOpen;
+  const setOpen = (val) => {
+    if (onIsOpenChange) onIsOpenChange(val);
+    else setLocalOpen(val);
+  };
+  const [apiKey, setApiKey]       = useState('');
   const [testStatus, setTestStatus] = useState(null); // null | 'testing' | 'ok' | 'error'
   const [testError, setTestError] = useState('');
 
-  // Load from localStorage on mount
+  // Track whether a key is currently saved
+  const [hasSavedKey, setHasSavedKey] = useState(() =>
+    Boolean(localStorage.getItem(ANTHROPIC_KEY_STORAGE))
+  );
+
+  // Load key on open
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const { apiUrl: url, apiKey: key } = JSON.parse(saved);
-      if (url) setApiUrl(url);
-      if (key) setApiKey(key);
-    } catch {
-      // ignore malformed storage
+    if (open) {
+      setApiKey(localStorage.getItem(ANTHROPIC_KEY_STORAGE) || '');
+      setTestStatus(null);
+      setTestError('');
     }
-  }, []);
-
-  const detectedProvider = detectProviderName(apiUrl);
-  const hasSettings = apiUrl.trim() && apiKey.trim();
-
-  // Check if current saved settings match inputs (to show "active" state on gear icon)
-  const [savedSettings, setSavedSettings] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
+  }, [open]);
 
   const handleSave = useCallback(() => {
-    if (hasSettings) {
-      const settings = { apiUrl: apiUrl.trim(), apiKey: apiKey.trim() };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-      setSavedSettings(settings);
-      onSettingsChange(settings);
+    const trimmed = apiKey.trim();
+    if (trimmed) {
+      localStorage.setItem(ANTHROPIC_KEY_STORAGE, trimmed);
+      setHasSavedKey(true);
+      onSettingsChange({ anthropicApiKey: trimmed });
     } else {
-      localStorage.removeItem(STORAGE_KEY);
-      setSavedSettings(null);
+      localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
+      setHasSavedKey(false);
       onSettingsChange(null);
     }
     setTestStatus(null);
     setOpen(false);
-  }, [apiUrl, apiKey, hasSettings, onSettingsChange]);
+  }, [apiKey, onSettingsChange]);
 
   const handleClear = useCallback(() => {
-    setApiUrl('');
     setApiKey('');
     setTestStatus(null);
     setTestError('');
-    localStorage.removeItem(STORAGE_KEY);
-    setSavedSettings(null);
+    localStorage.removeItem(ANTHROPIC_KEY_STORAGE);
+    setHasSavedKey(false);
     onSettingsChange(null);
     setOpen(false);
   }, [onSettingsChange]);
 
   const handleTest = useCallback(async () => {
-    if (!apiUrl.trim() || !apiKey.trim()) return;
+    const trimmed = apiKey.trim();
+    if (!trimmed) return;
     setTestStatus('testing');
     setTestError('');
 
     try {
-      const res = await fetch('/api/llm/test', {
+      const res = await fetch('/api/llm/validate-anthropic', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiUrl: apiUrl.trim(), apiKey: apiKey.trim() })
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Api-Key': trimmed,
+        },
+        body: JSON.stringify({})
       });
       const data = await res.json();
-      if (data.status === 'online') {
+      if (data.status === 'ok') {
         setTestStatus('ok');
       } else {
         setTestStatus('error');
-        setTestError(data.error || 'Connection failed');
+        setTestError(data.error || 'Key validation failed');
       }
     } catch (err) {
       setTestStatus('error');
       setTestError(err.message);
     }
-  }, [apiUrl, apiKey]);
+  }, [apiKey]);
 
   const handleClose = useCallback(() => {
     setTestStatus(null);
@@ -114,10 +100,10 @@ function SettingsPanel({ onSettingsChange }) {
   return (
     <>
       <button
-        className={`settings-gear-btn ${savedSettings ? 'active' : ''}`}
+        className={`settings-gear-btn ${hasSavedKey ? 'active' : ''}`}
         onClick={() => setOpen(true)}
-        title="LLM Settings"
-        aria-label="Open LLM settings"
+        title="Anthropic API Key"
+        aria-label="Open Anthropic key settings"
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="12" cy="12" r="3" />
@@ -132,39 +118,24 @@ function SettingsPanel({ onSettingsChange }) {
         >
           <div className="settings-panel">
             <div className="settings-header">
-              <span className="settings-title">LLM SETTINGS</span>
+              <span className="settings-title">ANTHROPIC API KEY</span>
               <button className="settings-close" onClick={handleClose}>✕</button>
             </div>
 
             <div className="settings-body">
               <div className="settings-note">
-                Override the server&apos;s .env LLM config. Settings are saved in your browser and sent with each request. Leave blank to use server defaults.
+                Add your Anthropic API key to unlock Claude Haiku and Sonnet for deep trace analysis.
+                The key is stored only in your browser and forwarded directly to Anthropic — it is never stored on this server.
               </div>
 
               <div className="settings-field">
-                <label className="settings-label">API URL</label>
-                <input
-                  className="settings-input"
-                  type="text"
-                  value={apiUrl}
-                  onChange={e => { setApiUrl(e.target.value); setTestStatus(null); }}
-                  placeholder="https://api.groq.com/openai/v1"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                {apiUrl.trim() && (
-                  <span className="settings-provider-tag">{detectedProvider}</span>
-                )}
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-label">API KEY</label>
+                <label className="settings-label">ANTHROPIC API KEY</label>
                 <input
                   className="settings-input"
                   type="password"
                   value={apiKey}
                   onChange={e => { setApiKey(e.target.value); setTestStatus(null); }}
-                  placeholder="sk-..."
+                  placeholder="sk-ant-..."
                   spellCheck={false}
                   autoComplete="off"
                 />
@@ -172,20 +143,35 @@ function SettingsPanel({ onSettingsChange }) {
 
               {testStatus && (
                 <div className={`settings-test-result ${testStatus}`}>
-                  {testStatus === 'testing' && '⟳  Testing connection...'}
-                  {testStatus === 'ok'      && '✓  Connection successful'}
-                  {testStatus === 'error'   && `✗  ${testError || 'Connection failed'}`}
+                  {testStatus === 'testing' && '⟳  Validating key…'}
+                  {testStatus === 'ok'      && '✓  Key is valid — Haiku and Sonnet are now available'}
+                  {testStatus === 'error'   && `✗  ${testError || 'Validation failed'}`}
                 </div>
               )}
+
+              <div className="settings-tier-info">
+                <div className="settings-tier-row">
+                  <span className="settings-tier-badge settings-tier-badge--free">FREE</span>
+                  <span className="settings-tier-label">Basic analysis via Groq (always on)</span>
+                </div>
+                <div className="settings-tier-row">
+                  <span className="settings-tier-badge settings-tier-badge--haiku">HAIKU</span>
+                  <span className="settings-tier-label">/trace, /variable, /path — requires key</span>
+                </div>
+                <div className="settings-tier-row">
+                  <span className="settings-tier-badge settings-tier-badge--sonnet">SONNET</span>
+                  <span className="settings-tier-label">Auto-analysis, /why, /compare — requires key</span>
+                </div>
+              </div>
             </div>
 
             <div className="settings-footer">
               <button
                 className="settings-btn-action test"
                 onClick={handleTest}
-                disabled={!apiUrl.trim() || !apiKey.trim() || testStatus === 'testing'}
+                disabled={!apiKey.trim() || testStatus === 'testing'}
               >
-                TEST CONNECTION
+                VALIDATE KEY
               </button>
               <div className="settings-footer-right">
                 <button className="settings-btn-action clear" onClick={handleClear}>

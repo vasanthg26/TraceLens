@@ -10,7 +10,25 @@ const providers = {
     baseUrl: 'https://api.groq.com/openai/v1',
     apiKey: process.env.GROQ_API_KEY,
     model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 4096,
+    maxTokens: 1024,
+    temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.3,
+    streaming: true
+  },
+  anthropic_haiku: {
+    name: 'Anthropic Haiku',
+    baseUrl: 'https://api.anthropic.com',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: 'claude-haiku-4-5-20251001',
+    maxTokens: 2048,
+    temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.3,
+    streaming: true
+  },
+  anthropic_sonnet: {
+    name: 'Anthropic Sonnet',
+    baseUrl: 'https://api.anthropic.com',
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: 'claude-sonnet-4-6',
+    maxTokens: 4096,
     temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.3,
     streaming: true
   },

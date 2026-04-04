@@ -1,7 +1,6 @@
 /**
  * App.jsx
  * Purpose: Root component — WebSocket connection, state management, view routing
- * Author: TraceLens
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -9,9 +8,8 @@ import './App.css';
 import FileUpload from './components/FileUpload';
 import ProgressBar from './components/ProgressBar';
 import LLMStatus from './components/LLMStatus';
-import SettingsPanel, { STORAGE_KEY } from './components/SettingsPanel';
+import SettingsPanel, { ANTHROPIC_KEY_STORAGE } from './components/SettingsPanel';
 import ResultsTabs from './components/ResultsTabs';
-import ChatPanel from './components/ChatPanel';
 import HistoryPanel from './components/HistoryPanel';
 
 function App() {
@@ -27,47 +25,53 @@ function App() {
 
   // Results state
   const [results, setResults] = useState({
-    summary: null,
-    sql: null,
-    loops: null,
-    events: null,
-    errors: null
+    summary: null, sql: null, loops: null, events: null, errors: null
   });
 
-  // LLM state
-  const [llmTokens, setLlmTokens] = useState('');
+  // LLM state (retained for FixPreview compatibility)
   const [llmAnalysis, setLlmAnalysis] = useState(null);
   const [llmError, setLlmError] = useState(null);
+
+  // Auto-analysis state (new in V2)
+  const [autoAnalysisStatus, setAutoAnalysisStatus] = useState(null); // null | 'loading' | 'done'
+  const [autoAnalysisContent, setAutoAnalysisContent] = useState('');
+  const [autoAnalysisUpgrade, setAutoAnalysisUpgrade] = useState(false);
+  const autoTokensRef = useRef('');
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([]);
   const [chatStreaming, setChatStreaming] = useState(false);
   const chatTokensRef = useRef('');
 
-  // LLM settings from UI (overrides .env when set)
-  const [llmSettings, setLlmSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  // Active tab (controlled here so App can switch to Ask on auto-analysis)
+  const [activeTab, setActiveTab] = useState('errors');
+
+  // Anthropic key (browser-only; never stored server-side)
+  const [hasAnthropicKey, setHasAnthropicKey] = useState(
+    () => Boolean(localStorage.getItem(ANTHROPIC_KEY_STORAGE))
+  );
 
   // History state
   const [showHistory, setShowHistory] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
 
-  // Component context metadata (from PSIWCEVENTS detection)
+  // Component context metadata
   const [componentMetadata, setComponentMetadata] = useState(null);
 
   // Error state
   const [appError, setAppError] = useState(null);
 
+  // Settings panel open state (lifted so UpgradeCard can trigger it)
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // ── Settings change handler ──
+  const handleSettingsChange = useCallback((settings) => {
+    setHasAnthropicKey(Boolean(settings?.anthropicApiKey));
+  }, []);
+
   // ── WebSocket connection ──
   const connectWs = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // In dev mode (any Vite port), connect directly to backend on 3000
     const host = import.meta.env.DEV
       ? window.location.hostname + ':3000'
       : window.location.host;
@@ -76,12 +80,10 @@ function App() {
 
     ws.onopen = () => {
       setWsConnected(true);
-      console.log('[WS] Connected');
     };
 
     ws.onclose = () => {
       setWsConnected(false);
-      console.log('[WS] Disconnected — reconnecting in 3s...');
       setTimeout(connectWs, 3000);
     };
 
@@ -113,8 +115,11 @@ function App() {
     switch (msg.type) {
       case 'status':
         if (msg.status === 'parsing') setView('progress');
-        // Show results as soon as parsing is done — don't block on LLM
-        if (msg.status === 'analyzing') setView('results');
+        // Show results immediately after parsing completes — don't block on LLM
+        if (msg.status === 'analyzing') {
+          setView('results');
+          setActiveTab('errors');
+        }
         break;
 
       case 'progress':
@@ -133,32 +138,61 @@ function App() {
         setComponentMetadata(msg.data);
         break;
 
+      // ── Auto-analysis (new V2 messages) ──
+      case 'auto-analysis-start':
+        autoTokensRef.current = '';
+        setAutoAnalysisContent('');
+        setAutoAnalysisStatus('loading');
+        // Switch to Ask tab so user sees the analysis arriving
+        setActiveTab('ask');
+        break;
+
+      case 'auto-analysis-token':
+        autoTokensRef.current += msg.token;
+        setAutoAnalysisContent(autoTokensRef.current);
+        break;
+
+      case 'auto-analysis-done':
+        setAutoAnalysisStatus('done');
+        setAutoAnalysisUpgrade(Boolean(msg.upgradePrompt));
+        if (msg.text) {
+          setAutoAnalysisContent(msg.text);
+          autoTokensRef.current = '';
+          // Also populate llmAnalysis for FixPreview/health badge
+          if (msg.analysis) setLlmAnalysis(msg.analysis);
+        }
+        break;
+
+      // Legacy LLM messages (kept for backwards compat with older server versions)
       case 'llm-token':
-        setLlmTokens(prev => prev + msg.token);
+        autoTokensRef.current += msg.token;
+        setAutoAnalysisContent(autoTokensRef.current);
+        if (autoAnalysisStatus !== 'loading') {
+          setAutoAnalysisStatus('loading');
+          setActiveTab('ask');
+        }
         break;
 
       case 'llm-done':
         setLlmAnalysis(msg.analysis);
+        setAutoAnalysisStatus('done');
+        setAutoAnalysisUpgrade(false);
         setView('results');
         break;
 
       case 'llm-error':
         setLlmError(msg.message);
-        // Still show results even if LLM fails
         setView('results');
         break;
 
+      // ── Chat messages ──
       case 'chat-token':
         chatTokensRef.current += msg.token;
-        // Snapshot the accumulated text so React batching can't read a stale ref
         const tokenSnapshot = chatTokensRef.current;
         setChatMessages(prev => {
           const updated = [...prev];
           if (updated.length > 0 && updated[updated.length - 1].role === 'assistant') {
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: tokenSnapshot
-            };
+            updated[updated.length - 1] = { role: 'assistant', content: tokenSnapshot };
           } else {
             updated.push({ role: 'assistant', content: tokenSnapshot });
           }
@@ -168,7 +202,6 @@ function App() {
 
       case 'chat-done':
         setChatStreaming(false);
-        // Finalize the message with the complete text before clearing the ref
         if (msg.text) {
           setChatMessages(prev => {
             const updated = [...prev];
@@ -190,6 +223,12 @@ function App() {
         }]);
         break;
 
+      case 'key-required':
+        setChatStreaming(false);
+        chatTokensRef.current = '';
+        setChatMessages(prev => [...prev, { role: 'upgrade' }]);
+        break;
+
       case 'history-saved':
         setHistoryCount(prev => prev + 1);
         break;
@@ -201,15 +240,18 @@ function App() {
       default:
         break;
     }
-  }, []);
+  }, [autoAnalysisStatus]);
 
   // ── Upload handler ──
   const handleUpload = useCallback(async (file) => {
     setAppError(null);
-    setLlmTokens('');
     setLlmAnalysis(null);
     setLlmError(null);
-    setResults({ summary: null, sql: null, loops: null, events: null, errors: null, variables: null });
+    setAutoAnalysisStatus(null);
+    setAutoAnalysisContent('');
+    setAutoAnalysisUpgrade(false);
+    autoTokensRef.current = '';
+    setResults({ summary: null, sql: null, loops: null, events: null, errors: null });
     setComponentMetadata(null);
     setChatMessages([]);
     setProgress({ percent: 0, linesProcessed: 0, phase: 'Uploading file...' });
@@ -217,12 +259,17 @@ function App() {
 
     const formData = new FormData();
     formData.append('traceFile', file);
-    if (llmSettings?.apiUrl) formData.append('llmApiUrl', llmSettings.apiUrl);
-    if (llmSettings?.apiKey) formData.append('llmApiKey', llmSettings.apiKey);
+
+    const headers = {};
+    const anthropicKey = localStorage.getItem(ANTHROPIC_KEY_STORAGE);
+    if (anthropicKey) {
+      headers['X-User-Api-Key'] = anthropicKey;
+    }
 
     try {
       const response = await fetch('/api/upload', {
         method: 'POST',
+        headers,
         body: formData
       });
 
@@ -234,7 +281,7 @@ function App() {
       setAppError(err.message);
       setView('upload');
     }
-  }, [llmSettings]);
+  }, []);
 
   // ── Chat send handler ──
   const handleChatSend = useCallback((question) => {
@@ -245,36 +292,34 @@ function App() {
 
     setChatMessages(prev => [...prev, { role: 'user', content: question }]);
 
-    // Send chat history (without the streaming assistant messages)
     const history = chatMessages
       .filter(m => m.content && !m.content.startsWith('Error:'))
       .map(m => ({ role: m.role, content: m.content }));
+
+    const anthropicKey = localStorage.getItem(ANTHROPIC_KEY_STORAGE);
 
     wsRef.current.send(JSON.stringify({
       type: 'chat',
       question,
       history,
-      ...(llmSettings?.apiUrl && llmSettings?.apiKey ? {
-        llmApiUrl: llmSettings.apiUrl,
-        llmApiKey: llmSettings.apiKey
-      } : {})
+      ...(anthropicKey ? { userApiKey: anthropicKey } : {})
     }));
-  }, [chatMessages, llmSettings]);
+  }, [chatMessages]);
 
   // ── Load a saved analysis from history ──
   const handleLoadHistory = useCallback((data) => {
     setShowHistory(false);
     setAppError(null);
-    setLlmTokens('');
+    setAutoAnalysisStatus(null);
+    setAutoAnalysisContent('');
+    autoTokensRef.current = '';
     setChatMessages([]);
-    // Restore parse results from saved sections
     setResults({
       summary: data.sections?.summary || null,
       sql: data.sections?.sql || null,
       loops: data.sections?.loops || null,
       events: data.sections?.events || null,
       errors: data.sections?.errors || null,
-      variables: data.sections?.variables || null
     });
     setLlmAnalysis({
       summary: data.summary || '',
@@ -282,7 +327,14 @@ function App() {
       topRecommendation: data.topRecommendation || '',
       fixes: []
     });
+    // Show the saved analysis in the auto-analysis banner
+    if (data.summary) {
+      setAutoAnalysisContent(data.summary);
+      setAutoAnalysisStatus('done');
+      setAutoAnalysisUpgrade(false);
+    }
     setLlmError(null);
+    setActiveTab('ask');
     setView('results');
   }, []);
 
@@ -290,13 +342,17 @@ function App() {
   const handleReset = useCallback(() => {
     setView('upload');
     setProgress({ percent: 0, linesProcessed: 0, phase: '' });
-    setResults({ summary: null, sql: null, loops: null, events: null, errors: null, variables: null });
+    setResults({ summary: null, sql: null, loops: null, events: null, errors: null });
     setComponentMetadata(null);
-    setLlmTokens('');
     setLlmAnalysis(null);
     setLlmError(null);
+    setAutoAnalysisStatus(null);
+    setAutoAnalysisContent('');
+    setAutoAnalysisUpgrade(false);
+    autoTokensRef.current = '';
     setChatMessages([]);
     setAppError(null);
+    setActiveTab('errors');
   }, []);
 
   return (
@@ -311,7 +367,7 @@ function App() {
           <span>TraceLens</span>
         </div>
         <div className="navbar-right">
-          <LLMStatus uiConfig={llmSettings} />
+          <LLMStatus hasAnthropicKey={hasAnthropicKey} />
           <button
             className="btn-history-nav"
             onClick={() => setShowHistory(true)}
@@ -322,7 +378,11 @@ function App() {
               <span className="history-count-badge">{historyCount}</span>
             )}
           </button>
-          <SettingsPanel onSettingsChange={setLlmSettings} />
+          <SettingsPanel
+            onSettingsChange={handleSettingsChange}
+            isOpen={settingsOpen}
+            onIsOpenChange={setSettingsOpen}
+          />
           <div className="connection-status">
             <div className={`connection-dot ${wsConnected ? '' : 'disconnected'}`} />
             {wsConnected ? 'Connected' : 'Disconnected'}
@@ -352,23 +412,28 @@ function App() {
         )}
 
         {view === 'results' && (
-          <div className="results-layout">
+          <div className="results-layout results-layout--full">
             <ResultsTabs
               results={results}
               llmAnalysis={llmAnalysis}
-              llmTokens={llmTokens}
               llmError={llmError}
               onReset={handleReset}
               componentMetadata={componentMetadata}
-            />
-            <ChatPanel
-              messages={chatMessages}
-              onSend={handleChatSend}
-              streaming={chatStreaming}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              chatMessages={chatMessages}
+              onChatSend={handleChatSend}
+              chatStreaming={chatStreaming}
+              autoAnalysisStatus={autoAnalysisStatus}
+              autoAnalysisContent={autoAnalysisContent}
+              autoAnalysisUpgrade={autoAnalysisUpgrade}
+              hasAnthropicKey={hasAnthropicKey}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
         )}
       </div>
+
       {/* ── History Panel Overlay ── */}
       {showHistory && (
         <HistoryPanel

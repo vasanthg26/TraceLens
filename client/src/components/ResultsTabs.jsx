@@ -1,7 +1,10 @@
 /**
  * ResultsTabs.jsx
- * Purpose: Main tab navigation for all result sections with badges and health indicator
- * Author: TraceLens
+ * Purpose: Main tab navigation — 4 tabs: Errors, Events, SQL, Ask
+ *   - Errors: ErrorPanel + ValueIssues merged
+ *   - Events: EventFlowPanel + FlameChart sub-tabs
+ *   - SQL:    SqlGroups + SqlByTable + LoopDetector sub-tabs
+ *   - Ask:    ChatPanel (auto-analysis + chat)
  */
 
 import React, { useState, useMemo } from 'react';
@@ -12,114 +15,9 @@ import LoopDetector from './LoopDetector';
 import FixPreview from './FixPreview';
 import ErrorPanel from './ErrorPanel';
 import ValueIssues from './ValueIssues';
-import VariableTracer from './VariableTracer';
+import ChatPanel from './ChatPanel';
 import { COLOR_MAP, EVENT_LEGEND, eventToLegendKey } from './eventConstants';
 import SqlByTable from './SqlByTable/SqlByTable';
-
-/**
- * Simple markdown-to-JSX renderer for LLM output.
- */
-function MarkdownContent({ text }) {
-  if (!text) return null;
-
-  const lines = text.split('\n');
-  const elements = [];
-  let inCodeBlock = false;
-  let codeLines = [];
-  let codeKey = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Code block toggle
-    if (line.trim().startsWith('```')) {
-      if (inCodeBlock) {
-        elements.push(
-          <pre key={`code-${codeKey++}`} className="md-code-block">
-            <code>{codeLines.join('\n')}</code>
-          </pre>
-        );
-        codeLines = [];
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    // Headers
-    if (line.startsWith('## ')) {
-      elements.push(<h3 key={i} className="md-h2">{line.substring(3)}</h3>);
-      continue;
-    }
-    if (line.startsWith('### ')) {
-      elements.push(<h4 key={i} className="md-h3">{line.substring(4)}</h4>);
-      continue;
-    }
-
-    // Bullet points
-    if (line.match(/^\s*[-*]\s+/)) {
-      const content = line.replace(/^\s*[-*]\s+/, '');
-      elements.push(
-        <div key={i} className="md-bullet">
-          <span className="md-bullet-dot">&bull;</span>
-          <span dangerouslySetInnerHTML={{ __html: inlineMd(content) }} />
-        </div>
-      );
-      continue;
-    }
-
-    // Numbered items
-    if (line.match(/^\s*\d+[\.\)]\s+/)) {
-      const numMatch = line.match(/^\s*(\d+)[\.\)]\s+(.*)/);
-      if (numMatch) {
-        elements.push(
-          <div key={i} className="md-numbered">
-            <span className="md-num">{numMatch[1]}.</span>
-            <span dangerouslySetInnerHTML={{ __html: inlineMd(numMatch[2]) }} />
-          </div>
-        );
-        continue;
-      }
-    }
-
-    // Empty line
-    if (!line.trim()) {
-      continue;
-    }
-
-    // Regular paragraph
-    elements.push(
-      <p key={i} className="md-para" dangerouslySetInnerHTML={{ __html: inlineMd(line) }} />
-    );
-  }
-
-  // Flush remaining code block
-  if (inCodeBlock && codeLines.length > 0) {
-    elements.push(
-      <pre key={`code-${codeKey}`} className="md-code-block">
-        <code>{codeLines.join('\n')}</code>
-      </pre>
-    );
-  }
-
-  return <>{elements}</>;
-}
-
-/** Inline markdown: **bold**, `code`, *italic* */
-function inlineMd(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
-}
 
 /**
  * EventFlowPanel — clickable event list that expands to show PeopleCode + SQL
@@ -215,7 +113,6 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
           const hasFields = event.fieldOps?.length > 0;
           const hasContent = hasCode || hasSql || hasFields;
 
-          // Find matching end event for duration
           const endEvent = events.eventFlow.find(
             e => e.type === 'end' && e.label === event.label && e.depth === event.depth
           );
@@ -246,7 +143,6 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
 
               {isExpanded && hasContent && (
                 <div className="event-detail" style={{ marginLeft: `${(event.depth || 0) * 20 + 32}px` }}>
-                  {/* PeopleCode lines */}
                   {hasCode && (
                     <div className="event-detail-section">
                       <div className="event-detail-label">PeopleCode</div>
@@ -260,8 +156,6 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
                       </div>
                     </div>
                   )}
-
-                  {/* SQL statements */}
                   {hasSql && (
                     <div className="event-detail-section">
                       <div className="event-detail-label">SQL Statements</div>
@@ -276,8 +170,6 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
                       </div>
                     </div>
                   )}
-
-                  {/* Field operations */}
                   {hasFields && (
                     <div className="event-detail-section">
                       <div className="event-detail-label">Field Operations</div>
@@ -310,38 +202,81 @@ function EventFlowPanel({ events, activeFilters, onFilterChange }) {
   );
 }
 
-function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSaveToHistory, historySaved, componentMetadata }) {
-  const [activeTab, setActiveTab] = useState('performance');
-  const [activeSubTab, setActiveSubTab] = useState('flame');
-  const [aiExpanded, setAiExpanded] = useState(false);
-  const [eventFilter, setEventFilter] = useState(null); // null = show all, Set = active event types
+/**
+ * @param {object}   props
+ * @param {object}   props.results
+ * @param {object}   props.llmAnalysis
+ * @param {string}   props.llmTokens
+ * @param {string}   props.llmError
+ * @param {function} props.onReset
+ * @param {function} props.onSaveToHistory
+ * @param {boolean}  props.historySaved
+ * @param {object}   props.componentMetadata
+ * @param {string}   props.activeTab             - controlled from App.jsx
+ * @param {function} props.onTabChange           - (tabId) => void
+ * @param {Array}    props.chatMessages
+ * @param {function} props.onChatSend
+ * @param {boolean}  props.chatStreaming
+ * @param {string}   props.autoAnalysisStatus    - null | 'loading' | 'done'
+ * @param {string}   props.autoAnalysisContent
+ * @param {boolean}  props.autoAnalysisUpgrade
+ * @param {boolean}  props.hasAnthropicKey
+ * @param {function} props.onOpenSettings - opens the Settings panel (for UpgradeCard CTA)
+ */
+function ResultsTabs({
+  results,
+  llmAnalysis,
+  llmTokens,
+  llmError,
+  onReset,
+  onSaveToHistory,
+  historySaved,
+  componentMetadata,
+  activeTab,
+  onTabChange,
+  chatMessages,
+  onChatSend,
+  chatStreaming,
+  autoAnalysisStatus,
+  autoAnalysisContent,
+  autoAnalysisUpgrade,
+  hasAnthropicKey,
+  onOpenSettings,
+}) {
+  const [activeSubTabEvents, setActiveSubTabEvents] = useState('flow');
+  const [activeSubTabSql, setActiveSubTabSql] = useState('groups');
+  const [eventFilter, setEventFilter] = useState(null);
 
-  const { summary, sql, loops, events, errors, variables } = results;
+  const { summary, sql, loops, events, errors } = results;
 
   const health = llmAnalysis?.health || 'fair';
-  const errorCount = errors?.errorStats?.total || 0;
-  const criticalCount = errors?.errorStats?.critical || 0;
-  const warningCount = errors?.errorStats?.warnings || 0;
+  const errorCount  = (errors?.errorStats?.critical || 0) + (errors?.errorStats?.warnings || 0);
   const valueIssueCount = errors?.errorStats?.valueIssueCount || 0;
+  const errBadge = errorCount + valueIssueCount || null;
   const eventCount = events?.eventCount || 0;
-  const varCount = variables?.uniqueVariables || 0;
+  const loopCount  = loops?.loopCount || 0;
+  const sqlCount   = sql?.sqlStats?.slowQueryCount || 0;
 
   const tabs = [
-    { id: 'performance', label: 'Performance Deep-Dive', badge: null },
-    { id: 'errors', label: 'Errors & Warnings', badge: errorCount > 0 ? errorCount : null },
-    { id: 'variables', label: 'Variable Tracer', badge: varCount },
-    { id: 'values', label: 'Value Issues', badge: valueIssueCount },
-    { id: 'events', label: 'Event Flow', badge: eventCount },
-    { id: 'ai', label: 'AI Analysis', badge: null, icon: true }
+    { id: 'errors',  label: 'Errors',  badge: errBadge },
+    { id: 'events',  label: 'Events',  badge: eventCount || null },
+    { id: 'sql',     label: 'SQL',     badge: sqlCount || null },
+    { id: 'ask',     label: 'Ask',     badge: null, special: autoAnalysisStatus === 'loading' },
   ];
 
-  const subTabs = [
+  const eventSubTabs = [
+    { id: 'flow',  label: 'Event Flow' },
     { id: 'flame', label: 'Flame Chart' },
-    { id: 'sql', label: 'SQL Groups' },
-    { id: 'sqltable', label: 'SQL by Table' },
-    { id: 'loops', label: 'Loop Detector' },
-    { id: 'fixes', label: 'Fix Previews' }
   ];
+
+  const sqlSubTabs = [
+    { id: 'groups',  label: 'SQL Groups' },
+    { id: 'table',   label: 'By Table' },
+    { id: 'loops',   label: `Loops${loopCount ? ` (${loopCount})` : ''}` },
+    { id: 'fixes',   label: 'Fix Previews' },
+  ];
+
+  const currentTab = activeTab || 'errors';
 
   return (
     <div className="results-tabs">
@@ -363,18 +298,18 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSav
             </div>
             <div className="stat">
               <span className="stat-value">{sql?.sqlStats?.slowQueryCount || 0}</span>
-              <span className="stat-label">Slow Queries</span>
+              <span className="stat-label">Slow</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{loops?.loopCount || 0}</span>
+              <span className="stat-value">{loopCount}</span>
               <span className="stat-label">Loops</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{criticalCount}</span>
+              <span className="stat-value">{errors?.errorStats?.critical || 0}</span>
               <span className="stat-label">Errors</span>
             </div>
             <div className="stat">
-              <span className="stat-value">{warningCount}</span>
+              <span className="stat-value">{errors?.errorStats?.warnings || 0}</span>
               <span className="stat-label">Warnings</span>
             </div>
           </div>
@@ -416,97 +351,93 @@ function ResultsTabs({ results, llmAnalysis, llmTokens, llmError, onReset, onSav
         {tabs.map(tab => (
           <button
             key={tab.id}
-            className={`tab-btn ${activeTab === tab.id ? 'active' : ''} ${tab.id === 'ai' ? 'ai-tab' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
+            className={`tab-btn ${currentTab === tab.id ? 'active' : ''} ${tab.id === 'ask' ? 'ask-tab' : ''}`}
+            onClick={() => onTabChange ? onTabChange(tab.id) : null}
           >
-            {tab.icon && (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
+            {tab.id === 'ask' && (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4 }}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             )}
             {tab.label}
-            {tab.badge > 0 && <span className="badge">{tab.badge}</span>}
-            {tab.id === 'ai' && llmTokens && !llmAnalysis && <span className="ai-streaming-dot" />}
+            {tab.badge != null && tab.badge > 0 && <span className="badge">{tab.badge}</span>}
+            {tab.special && <span className="ai-streaming-dot" />}
           </button>
         ))}
       </div>
 
-      {/* ── Performance Sub-tabs ── */}
-      {activeTab === 'performance' && (
+      {/* ── Events Sub-tabs ── */}
+      {currentTab === 'events' && (
         <div className="subtabs-bar">
-          {subTabs.map(tab => (
+          {eventSubTabs.map(t => (
             <button
-              key={tab.id}
-              className={`subtab-btn ${activeSubTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveSubTab(tab.id)}
+              key={t.id}
+              className={`subtab-btn ${activeSubTabEvents === t.id ? 'active' : ''}`}
+              onClick={() => setActiveSubTabEvents(t.id)}
             >
-              {tab.label}
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── SQL Sub-tabs ── */}
+      {currentTab === 'sql' && (
+        <div className="subtabs-bar">
+          {sqlSubTabs.map(t => (
+            <button
+              key={t.id}
+              className={`subtab-btn ${activeSubTabSql === t.id ? 'active' : ''}`}
+              onClick={() => setActiveSubTabSql(t.id)}
+            >
+              {t.label}
             </button>
           ))}
         </div>
       )}
 
       {/* ── Tab Content ── */}
-      <div className="tab-content">
-        {activeTab === 'performance' && activeSubTab === 'flame' && (
-          <FlameChart data={events?.flameData || []} activeFilters={eventFilter} onFilterChange={setEventFilter} />
+      <div className={`tab-content ${currentTab === 'ask' ? 'tab-content--ask' : ''}`}>
+        {currentTab === 'errors' && (
+          <>
+            <ErrorPanel errors={errors?.errors || []} />
+            {(errors?.valueIssues?.length > 0) && (
+              <ValueIssues issues={errors.valueIssues} />
+            )}
+          </>
         )}
-        {activeTab === 'performance' && activeSubTab === 'sql' && (
-          <SqlGroups data={sql?.sqlGroups || []} stats={sql?.sqlStats} />
-        )}
-        {activeTab === 'performance' && activeSubTab === 'sqltable' && (
-          <SqlByTable data={sql?.sqlByTable || []} />
-        )}
-        {activeTab === 'performance' && activeSubTab === 'loops' && (
-          <LoopDetector data={loops?.loopPatterns || []} codeLoops={loops?.codeLoops || []} totalWasted={loops?.totalWastedTime || 0} />
-        )}
-        {activeTab === 'performance' && activeSubTab === 'fixes' && (
-          <FixPreview fixes={llmAnalysis?.fixes || []} />
-        )}
-        {activeTab === 'errors' && (
-          <ErrorPanel errors={errors?.errors || []} />
-        )}
-        {activeTab === 'variables' && (
-          <VariableTracer data={variables} />
-        )}
-        {activeTab === 'values' && (
-          <ValueIssues issues={errors?.valueIssues || []} />
-        )}
-        {activeTab === 'events' && (
+
+        {currentTab === 'events' && activeSubTabEvents === 'flow' && (
           <EventFlowPanel events={events} activeFilters={eventFilter} onFilterChange={setEventFilter} />
         )}
-        {activeTab === 'ai' && (
-          <div className="ai-tab-content">
-            {llmAnalysis?.summary ? (
-              <>
-                <div className={`ai-analysis-body ${aiExpanded ? 'expanded' : 'collapsed'}`}>
-                  <MarkdownContent text={llmAnalysis.summary} />
-                </div>
-                <button
-                  className="ai-expand-btn"
-                  onClick={() => setAiExpanded(!aiExpanded)}
-                >
-                  {aiExpanded ? 'Show Less' : 'Show Full Analysis'}
-                </button>
-                {llmAnalysis.topRecommendation && !aiExpanded && (
-                  <div className="top-recommendation">
-                    <strong>Top Recommendation:</strong> {llmAnalysis.topRecommendation}
-                  </div>
-                )}
-              </>
-            ) : llmTokens ? (
-              <div className="streaming-text">
-                <MarkdownContent text={llmTokens} />
-                <span className="cursor">|</span>
-              </div>
-            ) : llmError ? (
-              <p className="ai-error">LLM unavailable: {llmError}</p>
-            ) : (
-              <p className="ai-loading">Waiting for AI analysis...</p>
-            )}
-          </div>
+        {currentTab === 'events' && activeSubTabEvents === 'flame' && (
+          <FlameChart data={events?.flameData || []} activeFilters={eventFilter} onFilterChange={setEventFilter} />
+        )}
+
+        {currentTab === 'sql' && activeSubTabSql === 'groups' && (
+          <SqlGroups data={sql?.sqlGroups || []} stats={sql?.sqlStats} />
+        )}
+        {currentTab === 'sql' && activeSubTabSql === 'table' && (
+          <SqlByTable data={sql?.sqlByTable || []} />
+        )}
+        {currentTab === 'sql' && activeSubTabSql === 'loops' && (
+          <LoopDetector data={loops?.loopPatterns || []} codeLoops={loops?.codeLoops || []} totalWasted={loops?.totalWastedTime || 0} />
+        )}
+        {currentTab === 'sql' && activeSubTabSql === 'fixes' && (
+          <FixPreview fixes={llmAnalysis?.fixes || []} />
+        )}
+
+        {currentTab === 'ask' && (
+          <ChatPanel
+            messages={chatMessages || []}
+            onSend={onChatSend}
+            streaming={chatStreaming}
+            autoAnalysisStatus={autoAnalysisStatus}
+            autoAnalysisContent={autoAnalysisContent}
+            autoAnalysisUpgrade={autoAnalysisUpgrade}
+            hasAnthropicKey={hasAnthropicKey}
+            onOpenSettings={onOpenSettings}
+          />
         )}
       </div>
     </div>
