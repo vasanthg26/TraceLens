@@ -27,6 +27,23 @@
 
 const classifyProgram = require('./classifyProgram');
 
+// Pre-compiled regex patterns for hot-path processLine
+const RE_BEGIN = /^>>>>>\s+Begin\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)/;
+const RE_END_NEW = /^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)\s+Dur=([\d.]+)/;
+const RE_END_NO_DUR = /^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)/;
+const RE_START_LEGACY = /^>>>\s+start\s+Nest=(\d+)\s+\.\s+(\S+)/;
+const RE_START_EXT = /^>>>\s+start-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)/;
+const RE_END_LEGACY = /^<<<\s+end\s+Nest=(\d+)\s+\.\s+(\S+)\s+Dur=([\d.]+)/;
+const RE_END_EXT = /^<<<\s+end-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)\s+Dur=([\d.]+)/;
+const RE_CALL = /^call\s+(constructor|method|setter|getter)(?:\s+(\S+))?\s+(\S+\.\S+\.\S+)/i;
+const RE_PARAM = /^(Str\[\d+\]|Bool|Num|Object)=(.*)/;
+const RE_CODE_LINE = /^\s*(\d+):\s+(.*)/;
+const RE_SQL_LINE = /Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+\w+\s+Stmt=(.+)/;
+const RE_FIELD_LINE = /(Fetch|Store) Field:\s+(\S+)\s+Value=(.*)/;
+const RE_STRIP_PS_NEW = /^PSAPPSRV\.\d+\s+\(\d+\)\s+\t\s+\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/;
+const RE_STRIP_PS_OLD = /^PSAPPSRV\.\d+\s+\[.*?\]\s+\S+\s+\S+\s+\S+\s+\(\d+\)\s+\t\s*(.*)/;
+const RE_STRIP_LEGACY = /\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/;
+
 class EventParser {
   constructor() {
     // Open events awaiting their end marker
@@ -59,7 +76,7 @@ class EventParser {
     const content = this._stripHeader(line);
 
     // ── New format: >>>>> Begin Record.Field.Event level N row N ────────────
-    const beginMatch = content.match(/^>>>>>\s+Begin\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)/);
+    const beginMatch = content.match(RE_BEGIN);
     if (beginMatch) {
       const program = beginMatch[1];
       const level = parseInt(beginMatch[2], 10);
@@ -68,7 +85,7 @@ class EventParser {
     }
 
     // ── New format: <<<<< End Record.Field.Event level N row N Dur=N.NNN ────
-    const endNewMatch = content.match(/^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)\s+row\s+(\d+)\s+Dur=([\d.]+)/);
+    const endNewMatch = content.match(RE_END_NEW);
     if (endNewMatch) {
       const program = endNewMatch[1];
       const level = parseInt(endNewMatch[2], 10);
@@ -78,7 +95,7 @@ class EventParser {
     }
 
     // Partial new End without Dur (truncated)
-    const endNewNoDur = content.match(/^<<<<<\s+End\s+(\S+)\s+level\s+(\d+)/);
+    const endNewNoDur = content.match(RE_END_NO_DUR);
     if (endNewNoDur) {
       const program = endNewNoDur[1];
       const level = parseInt(endNewNoDur[2], 10);
@@ -87,7 +104,7 @@ class EventParser {
     }
 
     // ── Legacy format: >>> start Nest=NN . Record.Field.EventName ───────────
-    const startMatch = content.match(/^>>>\s+start\s+Nest=(\d+)\s+\.\s+(\S+)/);
+    const startMatch = content.match(RE_START_LEGACY);
     if (startMatch) {
       const nestLevel = parseInt(startMatch[1], 10);
       const program = startMatch[2];
@@ -96,7 +113,7 @@ class EventParser {
     }
 
     // ── Legacy: >>> start-ext Nest=NN FunctionName Record.Field.EventName ───
-    const startExtMatch = content.match(/^>>>\s+start-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)/);
+    const startExtMatch = content.match(RE_START_EXT);
     if (startExtMatch) {
       const nestLevel = parseInt(startExtMatch[1], 10);
       const functionName = startExtMatch[2];
@@ -106,7 +123,7 @@ class EventParser {
     }
 
     // ── Legacy: <<< end Nest=NN . Record.Field.EventName Dur=N.NNN ──────────
-    const endMatch = content.match(/^<<<\s+end\s+Nest=(\d+)\s+\.\s+(\S+)\s+Dur=([\d.]+)/);
+    const endMatch = content.match(RE_END_LEGACY);
     if (endMatch) {
       const nestLevel = parseInt(endMatch[1], 10);
       const program = endMatch[2];
@@ -116,7 +133,7 @@ class EventParser {
     }
 
     // ── Legacy: <<< end-ext Nest=NN FunctionName Record.Field.EventName Dur ─
-    const endExtMatch = content.match(/^<<<\s+end-ext\s+Nest=(\d+)\s+(\S+)\s+(\S+)\s+Dur=([\d.]+)/);
+    const endExtMatch = content.match(RE_END_EXT);
     if (endExtMatch) {
       const nestLevel = parseInt(endExtMatch[1], 10);
       const program = endExtMatch[3];
@@ -127,7 +144,7 @@ class EventParser {
 
     // ── App Class calls ──────────────────────────────────────────────────────
     // call constructor|method|setter|getter [MethodName] Record.Field.Event
-    const callMatch = content.match(/^call\s+(constructor|method|setter|getter)(?:\s+(\S+))?\s+(\S+\.\S+\.\S+)/i);
+    const callMatch = content.match(RE_CALL);
     if (callMatch) {
       const callType = callMatch[1].toLowerCase();
       const methodName = callMatch[2] || null;
@@ -148,7 +165,7 @@ class EventParser {
 
     // ── Parameter value lines (follow call lines) ────────────────────────────
     if (this._lastCallIdx >= 0 && this.eventStack.length > 0) {
-      const paramMatch = content.match(/^(Str\[\d+\]|Bool|Num|Object)=(.*)/);
+      const paramMatch = content.match(RE_PARAM);
       if (paramMatch) {
         const entry = this.currentEventLines[this._lastCallIdx];
         if (entry && entry.type === 'call') {
@@ -158,7 +175,7 @@ class EventParser {
       }
     }
     // Non-param line resets the call context
-    if (content && !content.match(/^(Str\[\d+\]|Bool|Num|Object)=/)) {
+    if (content && !content.match(RE_PARAM)) {
       this._lastCallIdx = -1;
     }
 
@@ -166,7 +183,7 @@ class EventParser {
     if (this.eventStack.length === 0) return;
 
     // PeopleCode line: "  N: statement text"
-    const codeMatch = content.match(/^\s*(\d+):\s+(.*)/);
+    const codeMatch = content.match(RE_CODE_LINE);
     if (codeMatch) {
       const code = codeMatch[2].trim();
       if (code) {
@@ -176,7 +193,7 @@ class EventParser {
     }
 
     // SQL line
-    const sqlMatch = content.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+\w+\s+Stmt=(.+)/);
+    const sqlMatch = content.match(RE_SQL_LINE);
     if (sqlMatch) {
       this.currentEventLines.push({
         type: 'sql',
@@ -188,7 +205,7 @@ class EventParser {
     }
 
     // Fetch/Store Field line
-    const fieldMatch = content.match(/(Fetch|Store) Field:\s+(\S+)\s+Value=(.*)/);
+    const fieldMatch = content.match(RE_FIELD_LINE);
     if (fieldMatch) {
       this.currentEventLines.push({
         type: 'field',
@@ -227,15 +244,15 @@ class EventParser {
    */
   _stripHeader(line) {
     // New PSAPPSRV format: PSAPPSRV.PID (tid)\t lineNo-seq HH.MM.SS elapsed content
-    const psNewMatch = line.match(/^PSAPPSRV\.\d+\s+\(\d+\)\s+\t\s+\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+    const psNewMatch = line.match(RE_STRIP_PS_NEW);
     if (psNewMatch) return psNewMatch[1].trim();
 
     // Original PSAPPSRV prefix: PSAPPSRV.PID [token] tok sid uid (tid)\t content
-    const psMatch = line.match(/^PSAPPSRV\.\d+\s+\[.*?\]\s+\S+\s+\S+\s+\S+\s+\(\d+\)\s+\t\s*(.*)/);
+    const psMatch = line.match(RE_STRIP_PS_OLD);
     if (psMatch) return psMatch[1].trim();
 
     // Legacy: processNo-lineNo  HH.MM.SS  elapsed  <rest>
-    const legacyMatch = line.match(/^\d+-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/);
+    const legacyMatch = line.match(RE_STRIP_LEGACY);
     if (legacyMatch) return legacyMatch[1].trim();
 
     return line.trim();

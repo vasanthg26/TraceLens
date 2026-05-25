@@ -12,7 +12,23 @@
  *   Cur#1.1507888.CNVFIN RC=0 Dur=0.001234 Fetch
  */
 
+const crypto = require('crypto');
+
 const SLOW_THRESHOLD = parseFloat(process.env.SLOW_QUERY_THRESHOLD_SECS) || 1;
+
+// Pre-compiled regex patterns for hot-path processLine
+const RE_CURSOR = /Cur#([\d.]+\.\w+)\s+RC=(\d+)\s+Dur=([\d.]+)\s+(\w+)(?:\s+Stmt=(.+))?/;
+const RE_BIND = /Bind-(\d+)\s+type=\S+(?:\s+length=\d+)?\s+value=(.*)/i;
+const RE_PROCESS_NO = /^(\d+)-\d+\s/;
+const RE_PSAPPSRV_PREFIX = /^PSAPPSRV\.(\d+)\s/;
+const RE_ALT_CURSOR = /Cur#[\d.]+\.\w+\s+RC=\d+\s+Dur=([\d.]+)\s+(.+)/;
+const RE_SQL_START = /^(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP)\s/i;
+const RE_FROM = /\bFROM\s+([\w.]+)/i;
+const RE_INSERT = /\bINSERT\s+INTO\s+([\w.]+)/i;
+const RE_UPDATE = /\bUPDATE\s+([\w.]+)/i;
+const RE_DELETE = /\bDELETE\s+FROM\s+([\w.]+)/i;
+const RE_PS_CATALOG = /^PS[A-Z]/;
+const RE_SQL_TYPE = /^\s*(SELECT|INSERT|UPDATE|DELETE|MERGE)/i;
 
 class SqlAnalyzer {
   constructor() {
@@ -41,16 +57,11 @@ class SqlAnalyzer {
   }
 
   /**
-   * Generate a short signature hash for quick comparison.
+   * Generate a truncated SHA-256 signature for collision-resistant grouping.
    */
   signature(normalizedSql) {
-    let hash = 0;
-    for (let i = 0; i < normalizedSql.length; i++) {
-      const char = normalizedSql.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash |= 0;
-    }
-    return `sql_${Math.abs(hash).toString(36)}`;
+    const hash = crypto.createHash('sha256').update(normalizedSql).digest('hex');
+    return `sql_${hash.substring(0, 12)}`;
   }
 
   /**
@@ -58,10 +69,10 @@ class SqlAnalyzer {
    * Returns null if the header isn't present.
    */
   _extractProcessNo(line) {
-    const m = line.match(/^(\d+)-\d+\s/);
+    const m = line.match(RE_PROCESS_NO);
     if (m) return m[1];
     // Also check PSAPPSRV prefix
-    const ps = line.match(/^PSAPPSRV\.(\d+)\s/);
+    const ps = line.match(RE_PSAPPSRV_PREFIX);
     return ps ? ps[1] : null;
   }
 
@@ -73,7 +84,7 @@ class SqlAnalyzer {
     if (!table || table === 'UNKNOWN') return 'app';
     const t = table.toUpperCase();
     // PeopleTools catalog tables: start with PS but no underscore after (e.g. PSRECDEFN, PSOPTIONS)
-    if (/^PS[A-Z]/.test(t) && !t.startsWith('PS_')) return 'portal';
+    if (RE_PS_CATALOG.test(t) && !t.startsWith('PS_')) return 'portal';
     // PS_PT* tables
     if (t.startsWith('PS_PT')) return 'portal';
     // Portal-related prefixes
@@ -85,16 +96,16 @@ class SqlAnalyzer {
    * Extract primary table name from a SQL statement (first table in FROM clause).
    */
   _extractPrimaryTable(sql) {
-    const m = sql.match(/\bFROM\s+([\w.]+)/i);
+    const m = sql.match(RE_FROM);
     if (m) return m[1].toUpperCase().replace(/^PS_/, 'PS_');
     // INSERT INTO
-    const ins = sql.match(/\bINSERT\s+INTO\s+([\w.]+)/i);
+    const ins = sql.match(RE_INSERT);
     if (ins) return ins[1].toUpperCase();
     // UPDATE
-    const upd = sql.match(/\bUPDATE\s+([\w.]+)/i);
+    const upd = sql.match(RE_UPDATE);
     if (upd) return upd[1].toUpperCase();
     // DELETE FROM
-    const del = sql.match(/\bDELETE\s+FROM\s+([\w.]+)/i);
+    const del = sql.match(RE_DELETE);
     if (del) return del[1].toUpperCase();
     return 'UNKNOWN';
   }
@@ -129,7 +140,7 @@ class SqlAnalyzer {
     const processNo = this._extractProcessNo(line);
 
     // Match cursor line: Cur#1.1507888.CNVFIN RC=0 Dur=0.000155 OP [Stmt=SQL]
-    const curMatch = line.match(/Cur#([\d.]+\.\w+)\s+RC=(\d+)\s+Dur=([\d.]+)\s+(\w+)(?:\s+Stmt=(.+))?/);
+    const curMatch = line.match(RE_CURSOR);
     if (curMatch) {
       const cursorId = curMatch[1];
       const rc = parseInt(curMatch[2], 10);
@@ -192,7 +203,7 @@ class SqlAnalyzer {
 
       if (op === 'BIND') {
         // Inline bind: Cur#... BIND Bind-N type=... value=...
-        const inlineBind = line.match(/Bind-(\d+)\s+type=\S+(?:\s+length=\d+)?\s+value=(.*)/i);
+        const inlineBind = line.match(RE_BIND);
         if (inlineBind && this._lastActiveCursor && this.cursors.has(this._lastActiveCursor)) {
           const cursor = this.cursors.get(this._lastActiveCursor);
           const bindIdx = parseInt(inlineBind[1], 10);
@@ -230,7 +241,7 @@ class SqlAnalyzer {
     }
 
     // Bind variable line: "Bind-N type=... [length=N] value=..."
-    const bindMatch = line.match(/Bind-(\d+)\s+type=\S+(?:\s+length=\d+)?\s+value=(.*)/i);
+    const bindMatch = line.match(RE_BIND);
     if (bindMatch && this._lastActiveCursor && this.cursors.has(this._lastActiveCursor)) {
       const cursor = this.cursors.get(this._lastActiveCursor);
       const bindIdx = parseInt(bindMatch[1], 10);
@@ -243,11 +254,11 @@ class SqlAnalyzer {
     // Fallback: legacy format without cursor state machine
     // Matches: Cur#1.1507888.CNVFIN RC=0 Dur=0.000155 COM Stmt=SELECT ...
     // (already handled above, but keep for non-cursor SQL patterns)
-    const altMatch = line.match(/Cur#[\d.]+\.\w+\s+RC=\d+\s+Dur=([\d.]+)\s+(.+)/);
+    const altMatch = line.match(RE_ALT_CURSOR);
     if (altMatch) {
       const duration = parseFloat(altMatch[1]);
       const rest = altMatch[2].trim();
-      if (/^(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP)\s/i.test(rest)) {
+      if (RE_SQL_START.test(rest)) {
         this.recordSql(rest, duration, processNo);
       }
     }
@@ -271,7 +282,7 @@ class SqlAnalyzer {
     if (isSlow) this.slowQueryCount++;
 
     const table = this._extractPrimaryTable(normalized);
-    const sqlType = normalized.match(/^\s*(SELECT|INSERT|UPDATE|DELETE|MERGE)/i)?.[1]?.toUpperCase() || 'OTHER';
+    const sqlType = normalized.match(RE_SQL_TYPE)?.[1]?.toUpperCase() || 'OTHER';
 
     // Group by signature
     if (this.sqlGroups.has(sig)) {

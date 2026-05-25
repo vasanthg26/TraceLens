@@ -14,6 +14,22 @@
 
 const classifyProgram = require('./classifyProgram');
 
+// Pre-compiled regex patterns for hot-path processLine
+const RE_ERR_STRIP = /\d+-\d+\s+[\d.]+\s+(.*)/;
+const RE_ERR_BEGIN = />>>>>\s*Begin\s+(\S+)\.(\S+)\.(\S+)\s+level/;
+const RE_ERR_CODE_LINE = /^\s*(\d+):\s*(.*)/;
+const RE_ERR_SQL = /Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+COM\s+Stmt=(.+)/;
+const RE_ERR_FETCH_STORE = /(Fetch|Store) Field:\s+(\S+)\s+Value=(.*)/;
+const RE_ERR_DETECT = /\b(Error|PeopleCode Error|Warning|Exception|Uninitialized|SQL Error)\b/i;
+const RE_ERR_RC = /Cur#[\d.]+\.\w+\s+RC=(\d+)/;
+const RE_ERR_EPO = /EPO\s+error\s+pos=(\d+)[:\s]+(.*)/i;
+const RE_ERR_RTNCD = /ERR\s+rtncd=(\d+)/i;
+const RE_BEGIN_MARKER = />>>>>\s*Begin/;
+const RE_UNINIT = /Uninitialized variable[:\s]+(\S+)/i;
+const RE_NULL_FETCH = /Fetch Field:\s+(\S+)\s+Contains Null Value/i;
+const RE_EMPTY_FETCH = /Fetch Field:\s+(\S+)\s+Value=\s*$/;
+const RE_BIND_NULL = /Bind-(\d+)\s+type=\S+\s+length=(\d+)\s+value=(.*)/i;
+
 class ErrorParser {
   constructor() {
     this.errors = [];
@@ -38,7 +54,7 @@ class ErrorParser {
    * Strip trace header, return clean content.
    */
   stripHeader(line) {
-    const match = line.match(/\d+-\d+\s+[\d.]+\s+(.*)/);
+    const match = line.match(RE_ERR_STRIP);
     return match ? match[1] : line.trim();
   }
 
@@ -91,7 +107,7 @@ class ErrorParser {
     const content = this.stripHeader(trimmed);
 
     // Track program/event context from Begin markers
-    const beginMatch = trimmed.match(/>>>>>\s*Begin\s+(\S+)\.(\S+)\.(\S+)\s+level/);
+    const beginMatch = trimmed.match(RE_ERR_BEGIN);
     if (beginMatch) {
       this.currentProgram = `${beginMatch[1]}.${beginMatch[2]}`;
       this.currentEvent = beginMatch[3];
@@ -99,7 +115,7 @@ class ErrorParser {
     }
 
     // Track PeopleCode lines (clean, with line numbers)
-    const codeLineMatch = content.match(/^\s*(\d+):\s*(.*)/);
+    const codeLineMatch = content.match(RE_ERR_CODE_LINE);
     if (codeLineMatch) {
       this.codeBuffer.push({
         lineNum: parseInt(codeLineMatch[1]),
@@ -112,7 +128,7 @@ class ErrorParser {
     }
 
     // Track SQL statements (clean)
-    const sqlMatch = trimmed.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)\s+Dur=([\d.]+)\s+COM\s+Stmt=(.+)/);
+    const sqlMatch = trimmed.match(RE_ERR_SQL);
     if (sqlMatch) {
       this.sqlBuffer.push({
         rc: parseInt(sqlMatch[1]),
@@ -126,7 +142,7 @@ class ErrorParser {
     }
 
     // Track Fetch/Store for context
-    const fetchStoreMatch = content.match(/(Fetch|Store) Field:\s+(\S+)\s+Value=(.*)/);
+    const fetchStoreMatch = content.match(RE_ERR_FETCH_STORE);
 
     // Collect "after" context for pending errors
     for (const [errorIdx, remaining] of this.afterLinesNeeded) {
@@ -146,15 +162,15 @@ class ErrorParser {
     // program text, not actual error conditions. Matching "Exception" on those lines causes
     // thousands of false CRITICAL entries for every try/catch block in every program.
     const isPcCodeLine = !!codeLineMatch;
-    const isError = !isPcCodeLine && /\b(Error|PeopleCode Error|Warning|Exception|Uninitialized|SQL Error)\b/i.test(trimmed);
+    const isError = !isPcCodeLine && RE_ERR_DETECT.test(trimmed);
 
     // Detect SQL errors via return codes > 1
     // RC=0 = success, RC=1 = no rows (normal for Fetch), RC>1 = real DB error
-    const rcMatch = trimmed.match(/Cur#[\d.]+\.\w+\s+RC=(\d+)/);
+    const rcMatch = trimmed.match(RE_ERR_RC);
     const isSqlError = rcMatch && parseInt(rcMatch[1], 10) > 1;
 
     // Detect EPO (SQL parse error) and ERR (SQL runtime error) lines
-    const epoMatch = trimmed.match(/EPO\s+error\s+pos=(\d+)[:\s]+(.*)/i);
+    const epoMatch = trimmed.match(RE_ERR_EPO);
     if (epoMatch) {
       this.errors.push({
         severity: 'critical',
@@ -171,7 +187,7 @@ class ErrorParser {
       });
     }
 
-    const errMatch = trimmed.match(/ERR\s+rtncd=(\d+)/i);
+    const errMatch = trimmed.match(RE_ERR_RTNCD);
     if (errMatch && errMatch[1] !== '0') {
       this.errors.push({
         severity: 'warning',
@@ -246,7 +262,7 @@ class ErrorParser {
     if (fetchStoreMatch) {
       return { type: 'field', action: fetchStoreMatch[1], field: fetchStoreMatch[2], value: fetchStoreMatch[3] };
     }
-    if (content.match(/>>>>>\s*Begin/)) {
+    if (RE_BEGIN_MARKER.test(content)) {
       return { type: 'event', text: content };
     }
     return null;
@@ -257,7 +273,7 @@ class ErrorParser {
    */
   detectValueIssues(line, content) {
     // Uninitialized variable
-    const uninitMatch = line.match(/Uninitialized variable[:\s]+(\S+)/i);
+    const uninitMatch = line.match(RE_UNINIT);
     if (uninitMatch) {
       this.valueIssues.push({
         type: 'UNINIT',
@@ -272,7 +288,7 @@ class ErrorParser {
     }
 
     // Fetch Field: RECORD.FIELD Contains Null Value
-    const nullFetchMatch = content.match(/Fetch Field:\s+(\S+)\s+Contains Null Value/i);
+    const nullFetchMatch = content.match(RE_NULL_FETCH);
     if (nullFetchMatch) {
       const field = nullFetchMatch[1];
       this._nullFields.add(field.split('.').pop()); // track just the field name
@@ -289,7 +305,7 @@ class ErrorParser {
     }
 
     // Detect empty/null values from Fetch Field: X Value= (empty at end)
-    const fetchMatch = content.match(/Fetch Field:\s+(\S+)\s+Value=\s*$/);
+    const fetchMatch = content.match(RE_EMPTY_FETCH);
     if (fetchMatch) {
       this.valueIssues.push({
         type: 'EMPTY',
@@ -305,7 +321,7 @@ class ErrorParser {
 
     // Null propagation: Bind with empty/whitespace-only value when we've seen null fields recently
     // e.g. Bind-2 type=2 length=1 value= (single space = null passed to SQL)
-    const bindNullMatch = line.match(/Bind-(\d+)\s+type=\S+\s+length=(\d+)\s+value=(.*)/i);
+    const bindNullMatch = line.match(RE_BIND_NULL);
     if (bindNullMatch && this._nullFields.size > 0) {
       const bindVal = bindNullMatch[3];
       const bindLen = parseInt(bindNullMatch[2], 10);

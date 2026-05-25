@@ -17,6 +17,10 @@ const VariableTracer = require('./variableTracer');
 // PSAPPSRV line prefix: PSAPPSRV.PID [token] sessionToken sessionID userID (threadID) \t content
 const PSAPPSRV_REGEX = /^PSAPPSRV\.(\d+)\s+\[.*?\]\s+(\S+)\s+(\S+)\s+(\S+)\s+\((\d+)\)\s+\t\s*(.*)/;
 
+// PeopleTools version patterns found in trace file headers
+const RE_PT_VERSION = /PeopleTools\s+([\d.]+)/i;
+const RE_PT_TOOLSREL = /TOOLSREL[=:\s]+([\d.]+)/i;
+const RE_PT_REL = /\bREL[=:\s]+(8\.\d[\d.]*)/i;
 // Legacy line prefix: processNo-lineNo HH.MM.SS elapsed content
 const LEGACY_REGEX = /^(\d+)-\d+\s+[\d.]+\s+[\d.]+\s+(.*)/;
 
@@ -168,6 +172,9 @@ async function parseTraceFile(filePath, onProgress, onMetadata) {
   // Track unique process keys
   const processKeys = new Set();
 
+  // PeopleTools version detection (from first 50 lines)
+  let ptVersion = null;
+
   let linesProcessed   = 0;
   let bytesProcessed   = 0;
   let lastProgressUpdate = 0;
@@ -193,6 +200,12 @@ async function parseTraceFile(filePath, onProgress, onMetadata) {
     rl.on('line', (line) => {
       linesProcessed++;
       bytesProcessed += Buffer.byteLength(line, 'utf8') + 1;
+
+      // Detect PeopleTools version from header lines (first 50 lines only)
+      if (!ptVersion && linesProcessed <= 50) {
+        const vMatch = line.match(RE_PT_VERSION) || line.match(RE_PT_TOOLSREL) || line.match(RE_PT_REL);
+        if (vMatch) ptVersion = vMatch[1];
+      }
 
       // Extract process context
       const { processKey, pid } = extractLineContext(line);
@@ -269,7 +282,8 @@ async function parseTraceFile(filePath, onProgress, onMetadata) {
           fileSize: totalBytes,
           fileSizeMB: Math.round(totalBytes / 1024 / 1024 * 100) / 100,
           processCount: processKeys.size || 1,
-          processKeys: Array.from(processKeys).sort()
+          processKeys: Array.from(processKeys).sort(),
+          ptVersion: ptVersion || null
         },
         sql: sqlResults,
         loops: loopResults,
@@ -301,6 +315,9 @@ function buildLlmPrompt(results) {
   const errStats  = errData.errorStats || {};
 
   let prompt = `## Trace File Analysis Results\n\n`;
+  if (summary?.ptVersion) {
+    prompt += `**PeopleTools Version:** ${summary.ptVersion}\n`;
+  }
   prompt += `**Overview:** ${(summary?.totalLines || 0).toLocaleString()} lines, ${summary?.fileSizeMB || 0}MB file`;
   if ((summary?.processCount || 0) > 1) {
     prompt += `, ${summary.processCount} processes`;

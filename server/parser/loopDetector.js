@@ -5,6 +5,16 @@
  * Author: TraceLens
  */
 
+// Pre-compiled regex patterns for hot-path processLine
+const RE_BEGIN_CTX = />>>>>\s*Begin\s+(\S+)\.(\S+)\.(\S+)\s+level/;
+const RE_FOR = /^\s*For\s+&\w+\s*=\s*.+\s+To\s+/i;
+const RE_WHILE = /^\s*While\s+/i;
+const RE_REPEAT = /^\s*Repeat\s*$/i;
+const RE_END_FOR = /^\s*End-For\s*;?\s*$/i;
+const RE_END_WHILE = /^\s*End-While\s*;?\s*$/i;
+const RE_UNTIL = /^\s*Until\s+/i;
+const RE_SQL_CALL = /\b(SQLExec|CreateSQL|GetSQL|DoSelect|ScrollSelect|ScrollSelectNew)\s*\(/i;
+
 class LoopDetector {
   constructor() {
     // SQL repetition detection (sliding window)
@@ -32,7 +42,7 @@ class LoopDetector {
     const trimmed = line.trim();
 
     // Track current program context from >>>>> Begin markers
-    const beginMatch = trimmed.match(/>>>>>\s*Begin\s+(\S+)\.(\S+)\.(\S+)\s+level/);
+    const beginMatch = trimmed.match(RE_BEGIN_CTX);
     if (beginMatch) {
       this.currentContext = {
         program: `${beginMatch[1]}.${beginMatch[2]}`,
@@ -44,21 +54,21 @@ class LoopDetector {
     // ── Detect PeopleCode loop starts ──
 
     // For loop: "For &i = 1 To &count" or "For &i = 1 to &rs.ActiveRowCount"
-    const forMatch = trimmed.match(/^\s*For\s+&\w+\s*=\s*.+\s+To\s+/i);
+    const forMatch = trimmed.match(RE_FOR);
     if (forMatch) {
       this.pushLoop('For', trimmed);
       return;
     }
 
     // While loop: "While ..."
-    const whileMatch = trimmed.match(/^\s*While\s+/i);
+    const whileMatch = trimmed.match(RE_WHILE);
     if (whileMatch) {
       this.pushLoop('While', trimmed);
       return;
     }
 
     // Repeat loop: "Repeat"
-    const repeatMatch = trimmed.match(/^\s*Repeat\s*$/i);
+    const repeatMatch = trimmed.match(RE_REPEAT);
     if (repeatMatch) {
       this.pushLoop('Repeat', trimmed);
       return;
@@ -67,19 +77,19 @@ class LoopDetector {
     // ── Detect PeopleCode loop ends ──
 
     // "End-For"
-    if (/^\s*End-For\s*;?\s*$/i.test(trimmed)) {
+    if (RE_END_FOR.test(trimmed)) {
       this.popLoop('For');
       return;
     }
 
     // "End-While"
-    if (/^\s*End-While\s*;?\s*$/i.test(trimmed)) {
+    if (RE_END_WHILE.test(trimmed)) {
       this.popLoop('While');
       return;
     }
 
     // "Until <condition>"
-    if (/^\s*Until\s+/i.test(trimmed)) {
+    if (RE_UNTIL.test(trimmed)) {
       this.popLoop('Repeat');
       return;
     }
@@ -87,7 +97,7 @@ class LoopDetector {
     // ── Detect SQL calls inside loops ──
     if (this.loopStack.length > 0) {
       // SQLExec, CreateSQL, GetSQL, DoSelect — common SQL call patterns in PeopleCode
-      if (/\b(SQLExec|CreateSQL|GetSQL|DoSelect|ScrollSelect|ScrollSelectNew)\s*\(/i.test(trimmed)) {
+      if (RE_SQL_CALL.test(trimmed)) {
         this.loopStack[this.loopStack.length - 1].sqlCount++;
         this.loopStack[this.loopStack.length - 1].sqlCalls.push(
           trimmed.substring(0, 120)
