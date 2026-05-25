@@ -17,6 +17,7 @@ const {
   helmet, cors, corsOptions,
   uploadLimiter, apiLimiter,
   productionErrorHandler, validateFileType,
+  apiKeyAuth,
   isDev
 } = require('./middleware/security');
 
@@ -31,8 +32,49 @@ const { activeProvider } = require('./ai/llmConfig');
 const { saveAnalysis } = require('./db/database');
 const crypto = require('crypto');
 
-// In-memory cache: context hash → { text, analysis } — avoids re-running Sonnet for identical traces
-const sonnetAutoCache = new Map();
+// ── Per-session state ──
+// Each WebSocket connection gets its own session keyed by a random token.
+// Upload responses include the token so the client can associate its WS.
+const sessions = new Map(); // sessionToken → { ws, parseResults, llmResponse, analysisId, llmPrompt }
+
+function getOrCreateSession(ws) {
+  if (ws.__sessionToken && sessions.has(ws.__sessionToken)) {
+    return sessions.get(ws.__sessionToken);
+  }
+  const token = crypto.randomUUID();
+  ws.__sessionToken = token;
+  const session = { ws, parseResults: null, llmResponse: null, analysisId: null, llmPrompt: null };
+  sessions.set(token, session);
+  return session;
+}
+
+function getSessionByToken(token) {
+  return sessions.get(token) || null;
+}
+
+// ── LRU cache for Sonnet auto-analysis ──
+const SONNET_CACHE_MAX = parseInt(process.env.SONNET_CACHE_MAX || '50');
+const SONNET_CACHE_TTL_MS = parseInt(process.env.SONNET_CACHE_TTL_MINS || '60') * 60 * 1000;
+const sonnetAutoCache = new Map(); // context hash → { text, analysis, createdAt }
+
+function sonnetCacheGet(hash) {
+  const entry = sonnetAutoCache.get(hash);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAt > SONNET_CACHE_TTL_MS) {
+    sonnetAutoCache.delete(hash);
+    return null;
+  }
+  return entry;
+}
+
+function sonnetCacheSet(hash, data) {
+  // Evict oldest if at capacity
+  if (sonnetAutoCache.size >= SONNET_CACHE_MAX) {
+    const oldestKey = sonnetAutoCache.keys().next().value;
+    sonnetAutoCache.delete(oldestKey);
+  }
+  sonnetAutoCache.set(hash, { ...data, createdAt: Date.now() });
+}
 
 const PORT = parseInt(process.env.PORT) || 3000;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE_MB || '1024') * 1024 * 1024;
@@ -43,6 +85,7 @@ app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10kb' }));
 app.use('/api', apiLimiter);
+app.use('/api', apiKeyAuth);
 
 // LLM health endpoint
 app.use('/api/llm', llmHealthRouter);
@@ -125,12 +168,32 @@ const wss = new WebSocketServer({ server });
 // Track active WebSocket connections
 const clients = new Set();
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Authenticate WS via session token in query string
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get('token');
+
+  if (token && sessions.has(token)) {
+    // Re-associate existing session with new WS
+    const session = sessions.get(token);
+    session.ws = ws;
+    ws.__sessionToken = token;
+  } else {
+    // Create a new session for this connection
+    getOrCreateSession(ws);
+  }
+
   clients.add(ws);
-  console.log(`[WS] Client connected (${clients.size} total)`);
+  // Send the session token to the client so it can use it for uploads
+  wsSend(ws, { type: 'session', token: ws.__sessionToken });
+  console.log(`[WS] Client connected (${clients.size} total) session=${ws.__sessionToken.substring(0, 8)}`);
 
   ws.on('close', () => {
     clients.delete(ws);
+    // Clean up session after disconnect
+    if (ws.__sessionToken) {
+      sessions.delete(ws.__sessionToken);
+    }
     console.log(`[WS] Client disconnected (${clients.size} total)`);
   });
 
@@ -156,14 +219,13 @@ function wsSend(ws, data) {
 }
 
 /**
- * Broadcast to all connected clients.
+ * Send to a specific session's WebSocket client.
+ * Falls back to broadcast only if no session ws is available (should not happen).
  */
-function wsBroadcast(data) {
-  const msg = JSON.stringify(data);
-  for (const ws of clients) {
-    if (ws.readyState === 1) {
-      ws.send(msg);
-    }
+function wsSessionSend(sessionToken, data) {
+  const session = sessions.get(sessionToken);
+  if (session && session.ws && session.ws.readyState === 1) {
+    session.ws.send(JSON.stringify(data));
   }
 }
 
@@ -180,52 +242,63 @@ app.post('/api/upload', uploadLimiter, upload.single('traceFile'), validateFileT
   // User Anthropic key from header — never log the value
   const userApiKey = req.headers['x-user-api-key'] || null;
 
-  console.log(`[Upload] ${fileName} (${(fileSize / 1024 / 1024).toFixed(1)}MB)${userApiKey ? ' [user Anthropic key]' : ''}`);
+  // Associate upload with a session via X-Session-Token header
+  const sessionToken = req.headers['x-session-token'];
+  const session = sessionToken ? getSessionByToken(sessionToken) : null;
+
+  if (!session) {
+    return res.status(400).json({ error: 'Invalid or missing session token. Connect via WebSocket first.' });
+  }
+
+  console.log(`[Upload] ${fileName} (${(fileSize / 1024 / 1024).toFixed(1)}MB) session=${sessionToken.substring(0, 8)}${userApiKey ? ' [user Anthropic key]' : ''}`);
   res.json({ status: 'processing', fileName, fileSize });
+
+  // Helper to send to this session only
+  const send = (data) => wsSessionSend(sessionToken, data);
 
   // Start analysis pipeline
   try {
     // Phase 1: Parse the trace file
-    wsBroadcast({ type: 'status', status: 'parsing' });
+    send({ type: 'status', status: 'parsing' });
 
     const parseResults = await parseTraceFile(
       filePath,
-      (progress) => { wsBroadcast({ type: 'progress', ...progress }); },
-      (metadata) => { wsBroadcast({ type: 'metadata', data: metadata }); }
+      (progress) => { send({ type: 'progress', ...progress }); },
+      (metadata) => { send({ type: 'metadata', data: metadata }); }
     );
 
     // Send parse results section by section
-    wsBroadcast({ type: 'partial', section: 'summary', data: parseResults.summary });
-    wsBroadcast({ type: 'partial', section: 'sql', data: parseResults.sql });
-    wsBroadcast({ type: 'partial', section: 'loops', data: parseResults.loops });
-    wsBroadcast({ type: 'partial', section: 'events', data: parseResults.events });
-    wsBroadcast({ type: 'partial', section: 'errors', data: parseResults.errors });
-    wsBroadcast({ type: 'partial', section: 'variables', data: parseResults.variables });
+    send({ type: 'partial', section: 'summary', data: parseResults.summary });
+    send({ type: 'partial', section: 'sql', data: parseResults.sql });
+    send({ type: 'partial', section: 'loops', data: parseResults.loops });
+    send({ type: 'partial', section: 'events', data: parseResults.events });
+    send({ type: 'partial', section: 'errors', data: parseResults.errors });
+    send({ type: 'partial', section: 'variables', data: parseResults.variables });
 
     // Phase 2: Auto analysis — route based on whether user has Anthropic key
-    wsBroadcast({ type: 'status', status: 'analyzing' });
+    send({ type: 'status', status: 'analyzing' });
 
-    // Store parse results in memory for chat context
-    global.__lastParseResults = parseResults;
-    global.__lastAnalysisId = null;
+    // Store parse results in per-session state
+    session.parseResults = parseResults;
+    session.analysisId = null;
 
     if (userApiKey) {
       // User has Anthropic key — use Sonnet for deep auto-analysis
-      wsBroadcast({ type: 'auto-analysis-start' });
+      send({ type: 'auto-analysis-start' });
 
       const context = buildLlmContext(null, ['trace_meta', 'trace_events', 'trace_sql', 'trace_errors', 'trace_fields'], parseResults);
       const autoPrompt = `Analyze this PeopleSoft trace file and provide a full diagnostic.\n\n${context}`;
 
-      // Check in-memory cache by context hash — avoids re-billing Sonnet for duplicate uploads
+      // Check LRU cache by context hash — avoids re-billing Sonnet for duplicate uploads
       const contextHash = crypto.createHash('sha256').update(context).digest('hex');
-      const cachedResult = sonnetAutoCache.get(contextHash);
+      const cachedResult = sonnetCacheGet(contextHash);
 
       if (cachedResult) {
         console.log(`[Sonnet Cache] Hit for hash ${contextHash.substring(0, 8)} — skipping LLM call`);
-        global.__lastLlmResponse = cachedResult.text;
-        wsBroadcast({ type: 'llm-done', analysis: cachedResult.analysis });
-        wsBroadcast({ type: 'auto-analysis-done', text: cachedResult.text, analysis: cachedResult.analysis, cached: true });
-        saveAndBroadcast(fileName, fileSize, cachedResult.analysis, parseResults, 'anthropic/sonnet (cached)');
+        session.llmResponse = cachedResult.text;
+        send({ type: 'llm-done', analysis: cachedResult.analysis });
+        send({ type: 'auto-analysis-done', text: cachedResult.text, analysis: cachedResult.analysis, cached: true });
+        saveAndSend(send, session, fileName, fileSize, cachedResult.analysis, parseResults, 'anthropic/sonnet (cached)');
       } else {
         let fullAnalysisText = '';
 
@@ -236,33 +309,33 @@ app.post('/api/upload', uploadLimiter, upload.single('traceFile'), validateFileT
           userApiKey,
           (token) => {
             fullAnalysisText += token;
-            wsBroadcast({ type: 'llm-token', token });
+            send({ type: 'llm-token', token });
           },
           (fullText) => {
             fullAnalysisText = fullText;
             const analysis = buildAnalysisFromText(fullText);
-            global.__lastLlmResponse = fullText;
+            session.llmResponse = fullText;
 
-            // Store in cache for subsequent uploads of the same trace
-            sonnetAutoCache.set(contextHash, { text: fullText, analysis });
+            // Store in LRU cache for subsequent uploads of the same trace
+            sonnetCacheSet(contextHash, { text: fullText, analysis });
 
-            wsBroadcast({ type: 'llm-done', analysis });
-            wsBroadcast({ type: 'auto-analysis-done', text: fullText, analysis, cached: false });
+            send({ type: 'llm-done', analysis });
+            send({ type: 'auto-analysis-done', text: fullText, analysis, cached: false });
 
-            saveAndBroadcast(fileName, fileSize, analysis, parseResults, 'anthropic/sonnet');
+            saveAndSend(send, session, fileName, fileSize, analysis, parseResults, 'anthropic/sonnet');
           },
           (err) => {
             console.error('[Sonnet Error]', err.message);
-            wsBroadcast({ type: 'llm-error', message: err.message });
+            send({ type: 'llm-error', message: err.message });
             // Fall through to Groq basic analysis
-            runGroqBasicAnalysis(parseResults, fileName, fileSize);
+            runGroqBasicAnalysis(send, session, parseResults, fileName, fileSize);
           }
         );
       }
 
     } else {
       // No user Anthropic key — run Groq basic analysis
-      await runGroqBasicAnalysis(parseResults, fileName, fileSize);
+      await runGroqBasicAnalysis(send, session, parseResults, fileName, fileSize);
     }
 
     // Cleanup uploaded file
@@ -272,7 +345,7 @@ app.post('/api/upload', uploadLimiter, upload.single('traceFile'), validateFileT
 
   } catch (err) {
     console.error('[Pipeline Error]', err);
-    wsBroadcast({ type: 'error', message: `Analysis failed: ${err.message}` });
+    send({ type: 'error', message: `Analysis failed: ${err.message}` });
     fs.unlink(filePath, () => {});
   }
 });
@@ -280,31 +353,31 @@ app.post('/api/upload', uploadLimiter, upload.single('traceFile'), validateFileT
 /**
  * Run Groq-based basic analysis (no Anthropic key needed).
  */
-async function runGroqBasicAnalysis(parseResults, fileName, fileSize) {
+async function runGroqBasicAnalysis(send, session, parseResults, fileName, fileSize) {
   const llmPrompt = buildLlmPrompt(parseResults);
-  global.__lastLlmPrompt = llmPrompt;
+  session.llmPrompt = llmPrompt;
 
   await sendMessage(
     llmPrompt,
     null,
-    (token) => wsBroadcast({ type: 'llm-token', token }),
+    (token) => send({ type: 'llm-token', token }),
     (fullText) => {
       const analysis = buildAnalysisFromText(fullText);
-      global.__lastLlmResponse = fullText;
+      session.llmResponse = fullText;
 
-      wsBroadcast({ type: 'llm-done', analysis });
-      wsBroadcast({
+      send({ type: 'llm-done', analysis });
+      send({
         type: 'auto-analysis-done',
         analysis,
         cached: false,
         upgradePrompt: true  // tells UI to show Anthropic key prompt
       });
 
-      saveAndBroadcast(fileName, fileSize, analysis, parseResults, activeProvider.name || 'groq');
+      saveAndSend(send, session, fileName, fileSize, analysis, parseResults, activeProvider.name || 'groq');
     },
     (err) => {
       console.error('[LLM Error]', err.message);
-      wsBroadcast({ type: 'llm-error', message: err.message });
+      send({ type: 'llm-error', message: err.message });
     }
   );
 }
@@ -341,9 +414,9 @@ function buildAnalysisFromText(fullText) {
 }
 
 /**
- * Save analysis to SQLite and broadcast history-saved event.
+ * Save analysis to SQLite and send history-saved event to session.
  */
-function saveAndBroadcast(fileName, fileSize, analysis, parseResults, providerLabel) {
+function saveAndSend(send, session, fileName, fileSize, analysis, parseResults, providerLabel) {
   try {
     const savedId = saveAnalysis(
       {
@@ -370,8 +443,8 @@ function saveAndBroadcast(fileName, fileSize, analysis, parseResults, providerLa
         variables: parseResults.variables
       }
     );
-    global.__lastAnalysisId = savedId;
-    wsBroadcast({ type: 'history-saved', id: savedId });
+    session.analysisId = savedId;
+    send({ type: 'history-saved', id: savedId });
     console.log(`[History] Saved analysis #${savedId} for ${fileName}`);
   } catch (dbErr) {
     console.error('[History] Failed to save analysis:', dbErr.message);
@@ -395,15 +468,20 @@ async function handleChat(ws, msg) {
     return;
   }
 
+  // Get session state for this WS connection
+  const session = ws.__sessionToken ? sessions.get(ws.__sessionToken) : null;
+  const sessionParseResults = session?.parseResults || null;
+  const sessionLlmResponse = session?.llmResponse || null;
+
   // Build context from relevant virtual tables
   const context = buildLlmContext(
     null,
     route.tables,
-    global.__lastParseResults
+    sessionParseResults
   );
 
   // If no parse results available at all
-  if (!global.__lastParseResults && !context) {
+  if (!sessionParseResults && !context) {
     wsSend(ws, { type: 'chat-token', token: 'No trace data loaded. Please upload a trace file first.' });
     wsSend(ws, { type: 'chat-done', text: '' });
     return;
@@ -411,8 +489,8 @@ async function handleChat(ws, msg) {
 
   // Add previous LLM analysis for continuity
   let fullContext = context;
-  if (global.__lastLlmResponse) {
-    fullContext += `## Previous Analysis Summary\n${global.__lastLlmResponse.substring(0, 1500)}\n\n`;
+  if (sessionLlmResponse) {
+    fullContext += `## Previous Analysis Summary\n${sessionLlmResponse.substring(0, 1500)}\n\n`;
   }
 
   const contextPrompt = fullContext

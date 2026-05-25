@@ -69,22 +69,41 @@ function App() {
     setHasAnthropicKey(Boolean(settings?.anthropicApiKey));
   }, []);
 
+  // Session token for associating WS connection with uploads
+  const sessionTokenRef = useRef(null);
+
+  // Reconnection backoff state
+  const reconnectAttemptRef = useRef(0);
+  const MAX_RECONNECT_ATTEMPTS = 10;
+  const BASE_RECONNECT_DELAY = 1000; // 1 second
+  const MAX_RECONNECT_DELAY = 30000; // 30 seconds
+
   // ── WebSocket connection ──
   const connectWs = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = import.meta.env.DEV
       ? window.location.hostname + ':3000'
       : window.location.host;
-    const wsUrl = `${protocol}//${host}`;
+    const tokenParam = sessionTokenRef.current ? `?token=${sessionTokenRef.current}` : '';
+    const wsUrl = `${protocol}//${host}${tokenParam}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       setWsConnected(true);
+      reconnectAttemptRef.current = 0; // Reset backoff on successful connection
     };
 
     ws.onclose = () => {
       setWsConnected(false);
-      setTimeout(connectWs, 3000);
+      // Exponential backoff with jitter, capped at MAX_RECONNECT_DELAY
+      if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
+        const attempt = reconnectAttemptRef.current++;
+        const delay = Math.min(
+          BASE_RECONNECT_DELAY * Math.pow(2, attempt) + Math.random() * 1000,
+          MAX_RECONNECT_DELAY
+        );
+        setTimeout(connectWs, delay);
+      }
     };
 
     ws.onerror = () => {
@@ -113,6 +132,10 @@ function App() {
   // ── WebSocket message handler ──
   const handleWsMessage = useCallback((msg) => {
     switch (msg.type) {
+      case 'session':
+        sessionTokenRef.current = msg.token;
+        break;
+
       case 'status':
         if (msg.status === 'parsing') setView('progress');
         // Show results immediately after parsing completes — don't block on LLM
@@ -264,6 +287,10 @@ function App() {
     const anthropicKey = localStorage.getItem(ANTHROPIC_KEY_STORAGE);
     if (anthropicKey) {
       headers['X-User-Api-Key'] = anthropicKey;
+    }
+    // Associate upload with our WS session
+    if (sessionTokenRef.current) {
+      headers['X-Session-Token'] = sessionTokenRef.current;
     }
 
     try {

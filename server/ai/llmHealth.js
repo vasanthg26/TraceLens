@@ -66,16 +66,48 @@ router.get('/status', async (req, res) => {
   }
 });
 
+// Allowed hostnames for LLM test endpoint — prevents SSRF
+const ALLOWED_LLM_HOSTS = new Set([
+  'api.groq.com',
+  'api.openai.com',
+  'openrouter.ai',
+  'api.anthropic.com',
+  'localhost',
+  '127.0.0.1'
+]);
+
 /**
  * POST /api/llm/test
  * Tests a user-supplied apiUrl + apiKey. Used by the UI settings panel.
  * Detects an appropriate model from the URL to keep the test valid.
+ * SECURITY: Only allows requests to known LLM provider hostnames.
  */
 router.post('/test', async (req, res) => {
   const { apiUrl, apiKey } = req.body || {};
 
   if (!apiUrl || !apiKey) {
     return res.status(400).json({ error: 'apiUrl and apiKey are required' });
+  }
+
+  // Validate URL against allowlist to prevent SSRF
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(apiUrl);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
+  if (!ALLOWED_LLM_HOSTS.has(parsedUrl.hostname)) {
+    return res.status(403).json({
+      error: `Host "${parsedUrl.hostname}" is not allowed. Permitted hosts: ${[...ALLOWED_LLM_HOSTS].join(', ')}`
+    });
+  }
+
+  // Block private/internal IP ranges (additional safety for localhost)
+  if (parsedUrl.hostname !== 'localhost' && parsedUrl.hostname !== '127.0.0.1') {
+    if (!parsedUrl.protocol.startsWith('https')) {
+      return res.status(400).json({ error: 'Only HTTPS is allowed for remote LLM providers' });
+    }
   }
 
   // Pick a sensible default model based on the URL
