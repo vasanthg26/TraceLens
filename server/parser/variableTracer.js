@@ -12,6 +12,8 @@
  *   Function params: Int=0, String=abc
  */
 
+const MAX_VARIABLE_EVENTS = 100000;
+
 class VariableTracer {
   constructor() {
     // All tracked events: { lineNumber, type, variable, value, context, code }
@@ -19,6 +21,7 @@ class VariableTracer {
     this.lineNumber = 0;
     this.currentContext = { program: '', event: '', record: '' };
     this.currentCodeLine = '';
+    this.capped = false;
 
     // Index by variable name for fast lookup
     this.variableIndex = new Map(); // variableName → [eventIndex, ...]
@@ -186,6 +189,11 @@ class VariableTracer {
    * Add a tracked event and index it.
    */
   addEvent(eventData) {
+    if (this.events.length >= MAX_VARIABLE_EVENTS) {
+      this.capped = true;
+      return;
+    }
+
     const event = {
       lineNumber: this.lineNumber,
       context: { ...this.currentContext },
@@ -257,6 +265,7 @@ class VariableTracer {
       totalEvents: this.events.length,
       uniqueVariables: allVariables.length,
       variables: allVariables,
+      capped: this.capped,
       // Send all events (frontend will search/filter)
       events: this.events
     };

@@ -87,6 +87,16 @@ app.use(express.json({ limit: '10kb' }));
 app.use('/api', apiLimiter);
 app.use('/api', apiKeyAuth);
 
+// Health check endpoint (for Railway, container orchestration, uptime monitors)
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    provider: activeProvider.name,
+    activeSessions: sessions.size
+  });
+});
+
 // LLM health endpoint
 app.use('/api/llm', llmHealthRouter);
 

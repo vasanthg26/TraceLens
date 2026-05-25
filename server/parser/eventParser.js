@@ -25,6 +25,8 @@
  * Author: TraceLens
  */
 
+const classifyProgram = require('./classifyProgram');
+
 class EventParser {
   constructor() {
     // Open events awaiting their end marker
@@ -239,22 +241,8 @@ class EventParser {
     return line.trim();
   }
 
-  /**
-   * Classify a program as 'portal' (PeopleTools infrastructure) or 'app' (business logic).
-   * Portal code: PT* prefixed records, FUNCLIB_PORTAL, WEBLIB_PT*, system records.
-   */
   _classifyProgram(program) {
-    const record = program.split('.')[0].toUpperCase();
-    const PORTAL_EXACT = new Set(['PSOPTIONS', 'TRACE_SQL', 'PSVERSION', 'INSTALLATION', 'PSMSGCATDEFN']);
-    if (PORTAL_EXACT.has(record)) return 'portal';
-    if (
-      record.startsWith('PT') ||
-      record.startsWith('FUNCLIB_PT') ||
-      record.startsWith('FUNCLIB_PORTAL') ||
-      record.startsWith('WEBLIB_PT') ||
-      record.startsWith('WEBLIB_PTBR')
-    ) return 'portal';
-    return 'app';
+    return classifyProgram(program);
   }
 
   /**
