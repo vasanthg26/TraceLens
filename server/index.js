@@ -184,8 +184,10 @@ wss.on('connection', (ws, req) => {
   const token = url.searchParams.get('token');
 
   if (token && sessions.has(token)) {
-    // Re-associate existing session with new WS
+    // Re-associate existing session with new WS (cancel pending cleanup)
     const session = sessions.get(token);
+    if (session._cleanupTimer) clearTimeout(session._cleanupTimer);
+    session._cleanupTimer = null;
     session.ws = ws;
     ws.__sessionToken = token;
   } else {
@@ -200,9 +202,15 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     clients.delete(ws);
-    // Clean up session after disconnect
-    if (ws.__sessionToken) {
-      sessions.delete(ws.__sessionToken);
+    // Keep session alive for a grace period so reconnections can reuse it
+    // and uploads in-flight during brief disconnects still succeed
+    const token = ws.__sessionToken;
+    if (token && sessions.has(token)) {
+      const session = sessions.get(token);
+      session.ws = null; // Mark WS as disconnected
+      session._cleanupTimer = setTimeout(() => {
+        sessions.delete(token);
+      }, 60_000); // 60-second grace period
     }
     console.log(`[WS] Client disconnected (${clients.size} total)`);
   });
