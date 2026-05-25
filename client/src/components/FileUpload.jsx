@@ -10,7 +10,7 @@ import './FileUpload.css';
 const ALLOWED_EXTENSIONS = ['.trc', '.tracesql', '.log', '.txt'];
 const MAX_SIZE_MB = 1024;
 
-function FileUpload({ onUpload }) {
+function FileUpload({ onUpload, disabled }) {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [error, setError] = useState('');
@@ -140,9 +140,9 @@ function FileUpload({ onUpload }) {
           <button
             className="btn-analyze"
             onClick={handleUpload}
-            disabled={uploading}
+            disabled={uploading || disabled}
           >
-            {uploading ? 'Uploading...' : 'Analyze Trace'}
+            {disabled ? 'Waiting for connection...' : uploading ? 'Uploading...' : 'Analyze Trace'}
           </button>
           <button
             className="btn-clear"

@@ -410,9 +410,14 @@ function App() {
             isOpen={settingsOpen}
             onIsOpenChange={setSettingsOpen}
           />
-          <div className="connection-status">
+          <div
+            className="connection-status"
+            onClick={!wsConnected ? () => { reconnectAttemptRef.current = 0; connectWs(); } : undefined}
+            style={!wsConnected ? { cursor: 'pointer' } : undefined}
+            title={!wsConnected ? 'Click to reconnect' : ''}
+          >
             <div className={`connection-dot ${wsConnected ? '' : 'disconnected'}`} />
-            {wsConnected ? 'Connected' : 'Disconnected'}
+            {wsConnected ? 'Connected' : 'Reconnect'}
           </div>
         </div>
       </nav>
@@ -427,7 +432,7 @@ function App() {
         )}
 
         {view === 'upload' && (
-          <FileUpload onUpload={handleUpload} />
+          <FileUpload onUpload={handleUpload} disabled={!wsConnected} />
         )}
 
         {view === 'progress' && (

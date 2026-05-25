@@ -23,7 +23,7 @@ A web-based tool for analyzing large PeopleCode trace files (500MB to 1GB+) with
 
 ## Prerequisites
 
-- **Node.js 18+** (download from [nodejs.org](https://nodejs.org))
+- **Node.js 22+** (download from [nodejs.org](https://nodejs.org))
 - **One LLM provider** (pick any):
   - [Groq](https://console.groq.com) — free API key, fast inference
   - [Ollama](https://ollama.com) — local, free, no API key needed
@@ -203,7 +203,7 @@ TraceLens/
 - Increase `MAX_FILE_SIZE_MB` in `.env` (default: 1024)
 
 **"WebSocket disconnected"**
-- The client auto-reconnects every 3 seconds
+- The client auto-reconnects with exponential backoff (up to 30s)
 - Check that the server is running on the expected port
 
 **"Parse results but no AI analysis"**
@@ -214,7 +214,7 @@ TraceLens/
 **"Server crashes on large files"**
 - Ensure you have enough disk space for the upload
 - The parser uses streaming — memory should stay under ~50MB regardless of file size
-- Check Node.js version is 18+ (`node --version`)
+- Check Node.js version is 22+ (`node --version`)
 
 **"Vite dev server can't connect to API"**
 - The Vite proxy forwards `/api` and `/ws` to `localhost:3000`

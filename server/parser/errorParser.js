@@ -12,6 +12,8 @@
  *   Values:       "Fetch Field: RECORD.FIELD Value=X"
  */
 
+const classifyProgram = require('./classifyProgram');
+
 class ErrorParser {
   constructor() {
     this.errors = [];
@@ -337,22 +339,8 @@ class ErrorParser {
     }
   }
 
-  /**
-   * Classify a program as 'portal' (PeopleTools infrastructure) or 'app' (business logic).
-   */
   _classifyProgram(program) {
-    if (!program) return 'app';
-    const record = program.split('.')[0].toUpperCase();
-    const PORTAL_EXACT = new Set(['PSOPTIONS', 'TRACE_SQL', 'PSVERSION', 'INSTALLATION', 'PSMSGCATDEFN']);
-    if (PORTAL_EXACT.has(record)) return 'portal';
-    if (
-      record.startsWith('PT') ||
-      record.startsWith('FUNCLIB_PT') ||
-      record.startsWith('FUNCLIB_PORTAL') ||
-      record.startsWith('WEBLIB_PT') ||
-      record.startsWith('WEBLIB_PTBR')
-    ) return 'portal';
-    return 'app';
+    return classifyProgram(program);
   }
 
   /**

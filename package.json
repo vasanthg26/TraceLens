@@ -11,7 +11,11 @@
     "server": "node --watch server/index.js",
     "client": "cd client && npx vite",
     "build": "cd client && npm install --include=dev && npx vite build",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "better-sqlite3": "^9.0.0",
@@ -24,6 +28,9 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "concurrently": "^9.0.1"
+    "concurrently": "^9.0.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3"
   }
 }
